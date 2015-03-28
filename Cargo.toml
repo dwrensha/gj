@@ -1,0 +1,18 @@
+[package]
+
+name = "kj"
+version = "0.0.1"
+authors = [ "David Renshaw <david@sandstorm.io>" ]
+license = "MIT"
+description = "A port of kj promises."
+repository = "https://github.com/dwrensha/kj-rust"
+
+readme = "README.md"
+
+keywords = []
+
+[lib]
+
+name = "kj"
+path = "src/lib.rs"
+
