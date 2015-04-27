@@ -4,7 +4,7 @@ use std::cell::RefCell;
 
 thread_local!(static EVENT_LOOP: Option<RefCell<EventLoop>> = None);
 
-pub fn with_current_event_loop<F, R>(f: F) -> R
+fn with_current_event_loop<F, R>(f: F) -> R
     where F: FnOnce(&RefCell<EventLoop>) -> R {
         EVENT_LOOP.with(|maybe_event_loop| {
             match maybe_event_loop {
@@ -22,6 +22,17 @@ pub struct Promise<T> {
     pub node : Box<PromiseNode>,
 }
 
+impl <T> Promise <T> {
+    pub fn then<F, G, R>(self, _func: F, _error_handler: G) -> Promise<R>
+        where F: FnOnce(T) -> Result<R> {
+            unimplemented!()
+        }
+
+    pub fn wait(self) -> Result<T> {
+        unimplemented!()
+    }
+}
+
 pub trait Event {
     fn fire(&mut self);
 }
@@ -34,9 +45,15 @@ pub trait PromiseNode {
     fn get(&self);
 }
 
+/// A PromiseNode that transforms the result of another PromiseNode through an application-provided
+/// function (implements `then()`).
+pub struct TransformPromiseNode {
+    dependency: Box<PromiseNode>,
+}
+
 /// A promise that has already been resolved to an immediate value or error.
 pub struct ImmediatePromiseNode<T> {
-    result : ::std::result::Result<T, Error>,
+    result: Result<T>,
 }
 
 impl <T> PromiseNode for ImmediatePromiseNode<T> {
@@ -51,7 +68,6 @@ impl <T> PromiseNode for ImmediatePromiseNode<T> {
 
     }
 }
-
 
 trait ErrorHandler {
     fn task_failed(error: Error);
