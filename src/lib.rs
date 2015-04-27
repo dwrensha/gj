@@ -21,10 +21,13 @@ pub struct Promise<T> {
     pub node : Box<PromiseNode<T>>,
 }
 
-impl <T> Promise <T> {
-    pub fn then<F, G, R>(self, _func: F, _error_handler: G) -> Promise<R>
-        where F: FnOnce(T) -> Result<R> {
-            unimplemented!()
+impl <T> Promise <T> where T: 'static {
+    pub fn then<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
+        where F: 'static + FnOnce(T) -> Result<R>,
+              G: 'static + FnOnce(Error) -> Result<R>,
+              R: 'static {
+            let node : Box<PromiseNode<R>> = Box::new(TransformPromiseNode::new(self.node, func, error_handler));
+            Promise { node: node }
         }
 
     pub fn wait(self) -> Result<T> {
@@ -41,7 +44,7 @@ pub trait PromiseNode<T> {
     fn on_ready(&mut self, event : Box<Event>);
 
     fn set_self_pointer(&mut self) {}
-    fn get(self) -> Result<T>;
+    fn get(self: Box<Self>) -> Result<T>;
 }
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -53,15 +56,31 @@ where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
     error_handler: ErrorFunc,
 }
 
+impl <T, DepT, Func, ErrorFunc> TransformPromiseNode<T, DepT, Func, ErrorFunc>
+where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
+    fn new(dependency: Box<PromiseNode<DepT>>, func: Func, error_handler: ErrorFunc)
+           -> TransformPromiseNode<T, DepT, Func, ErrorFunc> {
+        TransformPromiseNode { dependency : dependency,
+                               func: func, error_handler: error_handler }
+    }
+}
+
 impl <T, DepT, Func, ErrorFunc> PromiseNode<T> for TransformPromiseNode<T, DepT, Func, ErrorFunc>
 where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
     fn on_ready(&mut self, event: Box<Event>) {
         self.dependency.on_ready(event);
     }
-    fn get(self) -> Result<T> {
-//        let dep_result = self.dependency.get();
-        unimplemented!()
-//        self.result
+    fn get(self: Box<Self>) -> Result<T> {
+        let tmp = *self;
+        let TransformPromiseNode {dependency, func, error_handler} = tmp;
+        match dependency.get() {
+            Ok(value) => {
+                func(value)
+            }
+            Err(e) => {
+                error_handler(e)
+            }
+        }
     }
 }
 
@@ -78,7 +97,7 @@ impl <T> PromiseNode<T> for ImmediatePromiseNode<T> {
             event_loop.borrow_mut().arm_breadth_first(event);
         });
     }
-    fn get(self) -> Result<T> {
+    fn get(self: Box<Self>) -> Result<T> {
         self.result
     }
 }
