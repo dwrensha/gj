@@ -18,8 +18,7 @@ pub type Error = Box<::std::error::Error>;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 pub struct Promise<T> {
-    phantom_data : ::std::marker::PhantomData<T>,
-    pub node : Box<PromiseNode>,
+    pub node : Box<PromiseNode<T>>,
 }
 
 impl <T> Promise <T> {
@@ -37,35 +36,50 @@ pub trait Event {
     fn fire(&mut self);
 }
 
-pub trait PromiseNode {
-    /// Arms the given event when ready.
+pub trait PromiseNode<T> {
+    /// Arms the given event when the promised value is ready.
     fn on_ready(&mut self, event : Box<Event>);
 
     fn set_self_pointer(&mut self) {}
-    fn get(&self);
+    fn get(self) -> Result<T>;
 }
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
 /// function (implements `then()`).
-pub struct TransformPromiseNode {
-    dependency: Box<PromiseNode>,
+pub struct TransformPromiseNode<T, DepT, Func, ErrorFunc>
+where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
+    dependency: Box<PromiseNode<DepT>>,
+    func: Func,
+    error_handler: ErrorFunc,
 }
+
+impl <T, DepT, Func, ErrorFunc> PromiseNode<T> for TransformPromiseNode<T, DepT, Func, ErrorFunc>
+where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
+    fn on_ready(&mut self, event: Box<Event>) {
+        self.dependency.on_ready(event);
+    }
+    fn get(self) -> Result<T> {
+//        let dep_result = self.dependency.get();
+        unimplemented!()
+//        self.result
+    }
+}
+
 
 /// A promise that has already been resolved to an immediate value or error.
 pub struct ImmediatePromiseNode<T> {
     result: Result<T>,
 }
 
-impl <T> PromiseNode for ImmediatePromiseNode<T> {
+impl <T> PromiseNode<T> for ImmediatePromiseNode<T> {
 
-    /// Arms the event then the promise is ready.
     fn on_ready(&mut self, event: Box<Event>) {
         with_current_event_loop(|event_loop| {
             event_loop.borrow_mut().arm_breadth_first(event);
         });
     }
-    fn get(&self) {
-
+    fn get(self) -> Result<T> {
+        self.result
     }
 }
 
