@@ -1,5 +1,19 @@
 #![allow(dead_code)]
 
+use std::cell::RefCell;
+
+thread_local!(static EVENT_LOOP: Option<RefCell<EventLoop>> = None);
+
+pub fn with_current_event_loop<F, R>(f: F) -> R
+    where F: FnOnce(&RefCell<EventLoop>) -> R {
+        EVENT_LOOP.with(|maybe_event_loop| {
+            match maybe_event_loop {
+                &None => panic!("current thread has no event loop"),
+                &Some(ref event_loop) => f(event_loop),
+            }
+        })
+    }
+
 pub type Error = Box<::std::error::Error>;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -14,7 +28,7 @@ pub trait Event {
 
 pub trait PromiseNode {
     /// Arms the given event when ready.
-    fn on_ready(&self, event : &mut Event);
+    fn on_ready(&self, event : Box<Event>);
 
     fn set_self_pointer(&mut self) {}
     fn get(&self);
@@ -26,9 +40,12 @@ pub struct ImmediatePromiseNode<T> {
 }
 
 impl <T> PromiseNode for ImmediatePromiseNode<T> {
-    fn on_ready(&self, event : &mut Event) {
-        unimplemented!();
-        //event.arm_breadth_first();
+
+    /// Arms the event then the promise is ready.
+    fn on_ready(&self, event: Box<Event>) {
+        with_current_event_loop(|event_loop| {
+            event_loop.borrow_mut().arm_breadth_first(event);
+        });
     }
     fn get(&self) {
 
@@ -51,7 +68,7 @@ struct InsertDeque<T> {
 }
 
 /// A queue of events being executed in a loop.
-struct EventLoop {
+pub struct EventLoop {
     daemons: TaskSetImpl,
     running: bool,
     last_runnable_state: bool,
@@ -60,6 +77,14 @@ struct EventLoop {
 }
 
 impl EventLoop {
+
+    fn arm_depth_first(&mut self, event: Box<Event>) {
+        self.depth_first_events.push_front(event);
+    }
+
+    fn arm_breadth_first(&mut self, event: Box<Event>) {
+        self.events.push_back(event);
+    }
 
     /// Run the even loop for `max_turn_count` turns or until there is nothing left to be done,
     /// whichever comes first. This never calls the `EventPort`'s `sleep()` or `poll()`. It will
@@ -83,7 +108,7 @@ impl EventLoop {
                 event.fire();
             }
         }
-        while(!self.depth_first_events.is_empty()) {
+        while !self.depth_first_events.is_empty() {
             self.events.push_front(self.depth_first_events.pop_back().unwrap());
         }
         return true;
