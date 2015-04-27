@@ -39,7 +39,7 @@ pub trait Event {
 
 pub trait PromiseNode {
     /// Arms the given event when ready.
-    fn on_ready(&self, event : Box<Event>);
+    fn on_ready(&mut self, event : Box<Event>);
 
     fn set_self_pointer(&mut self) {}
     fn get(&self);
@@ -59,7 +59,7 @@ pub struct ImmediatePromiseNode<T> {
 impl <T> PromiseNode for ImmediatePromiseNode<T> {
 
     /// Arms the event then the promise is ready.
-    fn on_ready(&self, event: Box<Event>) {
+    fn on_ready(&mut self, event: Box<Event>) {
         with_current_event_loop(|event_loop| {
             event_loop.borrow_mut().arm_breadth_first(event);
         });
