@@ -2,6 +2,8 @@
 
 use std::cell::RefCell;
 
+pub mod io;
+
 thread_local!(static EVENT_LOOP: RefCell<Option<EventLoop>> = RefCell::new(None));
 
 fn with_current_event_loop<F, R>(f: F) -> R
