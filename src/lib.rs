@@ -34,7 +34,7 @@ impl <T> Promise <T> where T: 'static {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent { fired: fired.clone()};
-            self.node.on_ready(Box::new(done_event));
+            self.node.on_ready(Box::new(done_event), event_loop);
 
             event_loop.running = true;
 
@@ -74,7 +74,7 @@ impl Event for BoolEvent {
 
 pub trait PromiseNode<T> {
     /// Arms the given event when the promised value is ready.
-    fn on_ready(&mut self, event : Box<Event>);
+    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop);
 
     fn set_self_pointer(&mut self) {}
     fn get(self: Box<Self>) -> Result<T>;
@@ -100,8 +100,8 @@ where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
 
 impl <T, DepT, Func, ErrorFunc> PromiseNode<T> for TransformPromiseNode<T, DepT, Func, ErrorFunc>
 where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
-    fn on_ready(&mut self, event: Box<Event>) {
-        self.dependency.on_ready(event);
+    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop) {
+        self.dependency.on_ready(event, event_loop);
     }
     fn get(self: Box<Self>) -> Result<T> {
         let tmp = *self;
@@ -125,10 +125,8 @@ pub struct ImmediatePromiseNode<T> {
 
 impl <T> PromiseNode<T> for ImmediatePromiseNode<T> {
 
-    fn on_ready(&mut self, event: Box<Event>) {
-        with_current_event_loop(|event_loop| {
-            event_loop.arm_breadth_first(event);
-        });
+    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop) {
+        event_loop.arm_breadth_first(event);
     }
     fn get(self: Box<Self>) -> Result<T> {
         self.result
@@ -228,11 +226,9 @@ impl OnReadyEvent {
         }
     }
 
-    fn init(&mut self, new_event: Box<Event>) {
+    fn init(&mut self, new_event: Box<Event>, event_loop: &mut EventLoop) {
         if self.is_already_ready() {
-            with_current_event_loop(|event_loop| {
-                event_loop.arm_breadth_first(new_event);
-            });
+            event_loop.arm_breadth_first(new_event);
         } else {
             *self = OnReadyEvent::Full(new_event);
         }
@@ -284,8 +280,8 @@ pub struct WrapperPromiseNode<T> where T: 'static {
 */
 
 impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
-    fn on_ready(&mut self, event: Box<Event>) {
-        self.borrow_mut().on_ready_event.init(event);
+    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop) {
+        self.borrow_mut().on_ready_event.init(event, event_loop);
     }
     fn get(self: Box<Self>) -> Result<T> {
         match ::std::mem::replace(&mut self.borrow_mut().result, None) {
@@ -318,16 +314,17 @@ mod tests {
     #[test]
     fn hello() {
         ::EventLoop::init();
-        let (mut promise, mut fulfiller) = ::new_promise_and_fulfiller::<u32>();
+        let (promise, mut fulfiller) = ::new_promise_and_fulfiller::<u32>();
         let p1 = promise.then(|x| {
-            println!("x = {}", x);
+            assert_eq!(x, 1);
             return Ok(x + 1);
         }, |e| {
-            return Ok(1);
+            return Err(e);
         });
 
         fulfiller.fulfill(10);
-        p1.wait();
+        let value = p1.wait().unwrap();
+        assert_eq!(value, 11);
 
     }
 }
