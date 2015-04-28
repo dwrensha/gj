@@ -1,18 +1,18 @@
 [package]
 
-name = "kj"
+name = "gj"
 version = "0.0.1"
 authors = [ "David Renshaw <david@sandstorm.io>" ]
 license = "MIT"
-description = "A port of kj promises."
-repository = "https://github.com/dwrensha/kj-rust"
+description = "Event loop and promises."
+repository = "https://github.com/dwrensha/gj"
 
 readme = "README.md"
 
-keywords = []
+keywords = ["promise", "async"]
 
 [lib]
 
-name = "kj"
+name = "gj"
 path = "src/lib.rs"
 
