@@ -2,14 +2,14 @@
 
 use std::cell::RefCell;
 
-thread_local!(static EVENT_LOOP: Option<RefCell<EventLoop>> = None);
+thread_local!(static EVENT_LOOP: RefCell<Option<EventLoop>> = RefCell::new(None));
 
 fn with_current_event_loop<F, R>(f: F) -> R
-    where F: FnOnce(&RefCell<EventLoop>) -> R {
+    where F: FnOnce(&mut EventLoop) -> R {
         EVENT_LOOP.with(|maybe_event_loop| {
-            match maybe_event_loop {
-                &None => panic!("current thread has no event loop"),
-                &Some(ref event_loop) => f(event_loop),
+            match &mut *maybe_event_loop.borrow_mut() {
+                &mut None => panic!("current thread has no event loop"),
+                &mut Some(ref mut event_loop) => f(event_loop),
             }
         })
     }
@@ -36,10 +36,10 @@ impl <T> Promise <T> where T: 'static {
             let done_event = BoolEvent { fired: fired.clone()};
             self.node.on_ready(Box::new(done_event));
 
-            event_loop.borrow_mut().running = true;
+            event_loop.running = true;
 
             while !fired.get() {
-                if !event_loop.borrow_mut().turn() {
+                if !event_loop.turn() {
                     // No events in the queue.
                     panic!("need to implement EventPort");
                 }
@@ -127,7 +127,7 @@ impl <T> PromiseNode<T> for ImmediatePromiseNode<T> {
 
     fn on_ready(&mut self, event: Box<Event>) {
         with_current_event_loop(|event_loop| {
-            event_loop.borrow_mut().arm_breadth_first(event);
+            event_loop.arm_breadth_first(event);
         });
     }
     fn get(self: Box<Self>) -> Result<T> {
@@ -145,7 +145,7 @@ struct TaskSetImpl {
 
 /// A queue of events being executed in a loop.
 pub struct EventLoop {
-    daemons: TaskSetImpl,
+//    daemons: TaskSetImpl,
     running: bool,
     last_runnable_state: bool,
     events: ::std::collections::VecDeque<Box<Event>>,
@@ -153,6 +153,16 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
+    fn init() {
+        EVENT_LOOP.with(|maybe_event_loop| {
+            let event_loop = EventLoop { running: false,
+                                         last_runnable_state: false,
+                                         events: ::std::collections::VecDeque::new(),
+                                         depth_first_events: ::std::collections::VecDeque::new() };
+
+            *maybe_event_loop.borrow_mut() = Some(event_loop);
+        });
+    }
 
     fn arm_depth_first(&mut self, event: Box<Event>) {
         self.depth_first_events.push_front(event);
@@ -221,10 +231,10 @@ impl OnReadyEvent {
     fn init(&mut self, new_event: Box<Event>) {
         if self.is_already_ready() {
             with_current_event_loop(|event_loop| {
-                event_loop.borrow_mut().arm_breadth_first(new_event);
+                event_loop.arm_breadth_first(new_event);
             });
         } else {
-            *self = OnReadyEvent::Empty;
+            *self = OnReadyEvent::Full(new_event);
         }
     }
 
@@ -236,7 +246,7 @@ impl OnReadyEvent {
             match old_self {
                 OnReadyEvent::Full(event) => {
                     with_current_event_loop(|event_loop| {
-                        event_loop.borrow_mut().arm_depth_first(event);
+                        event_loop.arm_depth_first(event);
                     });
                 }
                 _ => {
@@ -257,6 +267,7 @@ impl <T> PromiseFulfiller<T> for PromiseAndFulfillerHub<T> where T: 'static {
         if self.result.is_none() {
             self.result = Some(Ok(value));
         }
+        self.on_ready_event.arm();
     }
 
     fn reject(&mut self, error: Error) {
@@ -306,6 +317,7 @@ mod tests {
 
     #[test]
     fn hello() {
+        ::EventLoop::init();
         let (mut promise, mut fulfiller) = ::new_promise_and_fulfiller::<u32>();
         let p1 = promise.then(|x| {
             println!("x = {}", x);
