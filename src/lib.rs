@@ -151,7 +151,7 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    fn init() {
+    pub fn init() {
         EVENT_LOOP.with(|maybe_event_loop| {
             let event_loop = EventLoop { running: false,
                                          last_runnable_state: false,
@@ -306,25 +306,4 @@ pub fn new_promise_and_fulfiller<T>() -> (Promise<T>, Box<PromiseFulfiller<T>>) 
         PromiseAndFulfillerHub { result: None::<Result<T>>, on_ready_event: OnReadyEvent::Empty }));
     let result_promise : Promise<T> = Promise { node: Box::new(result.clone())};
     (result_promise, Box::new(result))
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn hello() {
-        ::EventLoop::init();
-        let (promise, mut fulfiller) = ::new_promise_and_fulfiller::<u32>();
-        let p1 = promise.then(|x| {
-            assert_eq!(x, 1);
-            return Ok(x + 1);
-        }, |e| {
-            return Err(e);
-        });
-
-        fulfiller.fulfill(10);
-        let value = p1.wait().unwrap();
-        assert_eq!(value, 11);
-
-    }
 }
