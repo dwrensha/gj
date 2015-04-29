@@ -24,7 +24,26 @@ pub struct Promise<T> where T: 'static {
 }
 
 impl <T> Promise <T> where T: 'static {
-    pub fn then<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
+    pub fn then<F, R>(self, func: F) -> Promise<R>
+        where F: 'static + FnOnce(T) -> Result<Promise<R>>,
+              R: 'static {
+                  self.then_else(func, |e| { return Err(e); })
+        }
+
+    pub fn then_else<F, G, R>(self, _func: F, _error_handler: G) -> Promise<R>
+        where F: 'static + FnOnce(T) -> Result<Promise<R>>,
+              G: 'static + FnOnce(Error) -> Result<R>,
+              R: 'static {
+                  unimplemented!();
+        }
+
+    pub fn map<F, R>(self, func: F) -> Promise<R>
+        where F: 'static + FnOnce(T) -> Result<R>,
+              R: 'static {
+            self.map_else(func, |e| { return Err(e); })
+        }
+
+    pub fn map_else<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
         where F: 'static + FnOnce(T) -> Result<R>,
               G: 'static + FnOnce(Error) -> Result<R>,
               R: 'static {
