@@ -69,6 +69,14 @@ impl <T> Promise <T> where T: 'static {
             self.node.get()
         })
     }
+
+    pub fn fulfilled(value: T) -> Promise<T> {
+        return Promise { node: Box::new(ImmediatePromiseNode { result: Ok(value) }) };
+    }
+
+    pub fn rejected(error: Error) -> Promise<T> {
+        return Promise { node: Box::new(ImmediatePromiseNode { result: Err(error) }) };
+    }
 }
 
 pub trait Event {
