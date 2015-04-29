@@ -7,11 +7,11 @@ pub mod io;
 thread_local!(static EVENT_LOOP: RefCell<Option<EventLoop>> = RefCell::new(None));
 
 fn with_current_event_loop<F, R>(f: F) -> R
-    where F: FnOnce(&mut EventLoop) -> R {
+    where F: FnOnce(&EventLoop) -> R {
         EVENT_LOOP.with(|maybe_event_loop| {
-            match &mut *maybe_event_loop.borrow_mut() {
-                &mut None => panic!("current thread has no event loop"),
-                &mut Some(ref mut event_loop) => f(event_loop),
+            match &*maybe_event_loop.borrow() {
+                &None => panic!("current thread has no event loop"),
+                &Some(ref event_loop) => f(event_loop),
             }
         })
     }
@@ -55,9 +55,9 @@ impl <T> Promise <T> where T: 'static {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent { fired: fired.clone()};
-            self.node.on_ready(Box::new(done_event), event_loop);
+            self.node.on_ready(Box::new(done_event));
 
-            event_loop.running = true;
+            //event_loop.running = true;
 
             while !fired.get() {
                 if !event_loop.turn() {
@@ -103,7 +103,7 @@ impl Event for BoolEvent {
 
 pub trait PromiseNode<T> {
     /// Arms the given event when the promised value is ready.
-    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop);
+    fn on_ready(&mut self, event: Box<Event>);
 
     fn set_self_pointer(&mut self) {}
     fn get(self: Box<Self>) -> Result<T>;
@@ -129,8 +129,8 @@ where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
 
 impl <T, DepT, Func, ErrorFunc> PromiseNode<T> for TransformPromiseNode<T, DepT, Func, ErrorFunc>
 where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
-    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop) {
-        self.dependency.on_ready(event, event_loop);
+    fn on_ready(&mut self, event: Box<Event>) {
+        self.dependency.on_ready(event);
     }
     fn get(self: Box<Self>) -> Result<T> {
         let tmp = *self;
@@ -154,8 +154,10 @@ pub struct ImmediatePromiseNode<T> {
 
 impl <T> PromiseNode<T> for ImmediatePromiseNode<T> {
 
-    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop) {
-        event_loop.arm_breadth_first(event);
+    fn on_ready(&mut self, event: Box<Event>) {
+        with_current_event_loop(|event_loop| {
+            event_loop.arm_breadth_first(event);
+        });
     }
     fn get(self: Box<Self>) -> Result<T> {
         self.result
@@ -175,28 +177,29 @@ pub struct EventLoop {
 //    daemons: TaskSetImpl,
     running: bool,
     last_runnable_state: bool,
-    events: ::std::collections::VecDeque<Box<Event>>,
-    depth_first_events: ::std::collections::VecDeque<Box<Event>>,
+    events: RefCell<::std::collections::VecDeque<Box<Event>>>,
+    depth_first_events: RefCell<::std::collections::VecDeque<Box<Event>>>,
 }
 
 impl EventLoop {
     pub fn init() {
         EVENT_LOOP.with(|maybe_event_loop| {
-            let event_loop = EventLoop { running: false,
-                                         last_runnable_state: false,
-                                         events: ::std::collections::VecDeque::new(),
-                                         depth_first_events: ::std::collections::VecDeque::new() };
+            let event_loop = EventLoop {
+                running: false,
+                last_runnable_state: false,
+                events: RefCell::new(::std::collections::VecDeque::new()),
+                depth_first_events: RefCell::new(::std::collections::VecDeque::new()) };
 
             *maybe_event_loop.borrow_mut() = Some(event_loop);
         });
     }
 
-    fn arm_depth_first(&mut self, event: Box<Event>) {
-        self.depth_first_events.push_front(event);
+    fn arm_depth_first(&self, event: Box<Event>) {
+        self.depth_first_events.borrow_mut().push_front(event);
     }
 
-    fn arm_breadth_first(&mut self, event: Box<Event>) {
-        self.events.push_back(event);
+    fn arm_breadth_first(&self, event: Box<Event>) {
+        self.events.borrow_mut().push_back(event);
     }
 
     /// Run the event loop for `max_turn_count` turns or until there is nothing left to be done,
@@ -212,17 +215,18 @@ impl EventLoop {
         }
     }
 
-    fn turn(&mut self) -> bool {
-        assert!(self.depth_first_events.is_empty());
-        match self.events.pop_front() {
+    fn turn(&self) -> bool {
+        assert!(self.depth_first_events.borrow().is_empty());
+        match self.events.borrow_mut().pop_front() {
             None => return false,
             Some(mut event) => {
                 // event->firing = true ?
                 event.fire();
             }
         }
-        while !self.depth_first_events.is_empty() {
-            self.events.push_front(self.depth_first_events.pop_back().unwrap());
+        while !self.depth_first_events.borrow().is_empty() {
+            let event = self.depth_first_events.borrow_mut().pop_back().unwrap();
+            self.events.borrow_mut().push_front(event);
         }
         return true;
     }
@@ -255,12 +259,14 @@ impl OnReadyEvent {
         }
     }
 
-    fn init(&mut self, new_event: Box<Event>, event_loop: &mut EventLoop) {
-        if self.is_already_ready() {
-            event_loop.arm_breadth_first(new_event);
-        } else {
-            *self = OnReadyEvent::Full(new_event);
-        }
+    fn init(&mut self, new_event: Box<Event>) {
+        with_current_event_loop(|event_loop| {
+            if self.is_already_ready() {
+                event_loop.arm_breadth_first(new_event);
+            } else {
+                *self = OnReadyEvent::Full(new_event);
+            }
+        });
     }
 
     fn arm(&mut self) {
@@ -309,8 +315,8 @@ pub struct WrapperPromiseNode<T> where T: 'static {
 */
 
 impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
-    fn on_ready(&mut self, event: Box<Event>, event_loop: &mut EventLoop) {
-        self.borrow_mut().on_ready_event.init(event, event_loop);
+    fn on_ready(&mut self, event: Box<Event>) {
+        self.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<T> {
         match ::std::mem::replace(&mut self.borrow_mut().result, None) {
