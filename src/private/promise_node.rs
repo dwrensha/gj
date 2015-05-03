@@ -22,7 +22,7 @@
 #![allow(dead_code)]
 
 use {Result, Error, Promise};
-use private::{Event, with_current_event_loop, PromiseNode};
+use private::{Event, with_current_event_loop, OnReadyEvent, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -93,10 +93,43 @@ enum ChainState<T> {
 /// Promise node that reduces Promise<Promise<T>> to Promise<T>.
 pub struct Chain<T> {
     state: ChainState<T>,
+    on_ready_event: OnReadyEvent,
 }
 
-impl <T> Chain <T> {
+impl <T> Chain<T> {
     pub fn new(inner: Box<PromiseNode<Promise<T>>>) -> Chain<T> {
-        Chain { state: ChainState::Step1(inner) }
+
+        // TODO:
+        //inner.on_ready(..)
+
+        Chain { state: ChainState::Step1(inner),
+                on_ready_event: OnReadyEvent::Empty }
+    }
+}
+
+impl <T> PromiseNode<T> for Chain<T> {
+    fn on_ready(&mut self, event: Box<Event>) {
+        match self {
+            &mut Chain { state: ChainState::Step2(ref mut inner), .. } => {
+                inner.on_ready(event);
+            }
+            &mut Chain {on_ready_event : OnReadyEvent::AlreadyReady, .. } |
+            &mut Chain {on_ready_event : OnReadyEvent::Full(_), .. } => {
+                panic!("on_ready() can only be called once.");
+            }
+            &mut Chain {ref mut on_ready_event, .. } => {
+                *on_ready_event = OnReadyEvent::Full(event);
+            }
+        }
+    }
+    fn get(self: Box<Self>) -> Result<T> {
+        match self.state {
+            ChainState::Step2(inner) => {
+                inner.get()
+            }
+            _ => {
+                panic!()
+            }
+        }
     }
 }
