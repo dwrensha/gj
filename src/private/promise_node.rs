@@ -113,8 +113,16 @@ impl <T> Event for ChainEvent<T> where T: 'static {
 
                         *self.state.borrow_mut() = ChainState::Step2(intermediate.node, None);
                     }
-                    Err(_e) => {
-                        panic!()
+                    Err(e) => {
+                        let mut node = Immediate::new(Err(e));
+                        match on_ready_event {
+                            Some(event) => {
+                                node.on_ready(event);
+                            }
+                            None => {}
+                        }
+
+                        *self.state.borrow_mut() = ChainState::Step2(Box::new(node), None);
                     }
                 }
             }

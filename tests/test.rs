@@ -25,10 +25,10 @@ extern crate gj;
 fn eval_void() {
     use std::rc::Rc;
     use std::cell::Cell;
-    ::gj::EventLoop::init();
+    gj::EventLoop::init();
     let done = Rc::new(Cell::new(false));
     let done1 = done.clone();
-    let promise = ::gj::Promise::fulfilled(()).map(move |()| {
+    let promise = gj::Promise::fulfilled(()).map(move |()| {
         done1.clone().set(true);
         return Ok(());
     });
@@ -39,8 +39,8 @@ fn eval_void() {
 
 #[test]
 fn eval_int() {
-    ::gj::EventLoop::init();
-    let promise = ::gj::Promise::fulfilled(19u64).map(|x| {
+    gj::EventLoop::init();
+    let promise = gj::Promise::fulfilled(19u64).map(|x| {
         assert_eq!(x, 19);
         return Ok(x + 2);
     });
@@ -51,8 +51,8 @@ fn eval_int() {
 
 #[test]
 fn fulfiller() {
-    ::gj::EventLoop::init();
-    let (promise, mut fulfiller) = ::gj::new_promise_and_fulfiller::<u32>();
+    gj::EventLoop::init();
+    let (promise, mut fulfiller) = gj::new_promise_and_fulfiller::<u32>();
     let p1 = promise.map(|x| {
         assert_eq!(x, 10);
         return Ok(x + 1);
@@ -79,4 +79,22 @@ fn chain() {
 
     let value = promise3.wait().unwrap();
     assert_eq!(444, value);
+}
+
+#[test]
+fn chain_error() {
+    gj::EventLoop::init();
+
+    let promise = gj::Promise::fulfilled(()).map(|()| { return Ok("123"); });
+    let promise2 = gj::Promise::fulfilled(()).map(|()| { return Ok("XXX321"); });
+
+    let promise3 = promise.then(move |istr| {
+        return Ok(promise2.then(move |jstr| {
+            let i: i32 = try!(istr.parse());
+            let j: i32 = try!(jstr.parse());  // Should return an error.
+            return Ok(gj::Promise::fulfilled(i + j));
+        }));
+    });
+
+    assert!(promise3.wait().is_err());
 }
