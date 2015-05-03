@@ -19,7 +19,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use {Result, Error};
+#![allow(dead_code)]
+
+use {Result, Error, Promise};
 use private::{Event, with_current_event_loop, PromiseNode};
 
 
@@ -80,5 +82,21 @@ impl <T> PromiseNode<T> for Immediate<T> {
     }
     fn get(self: Box<Self>) -> Result<T> {
         self.result
+    }
+}
+
+enum ChainState<T> {
+    Step1(Box<PromiseNode<Promise<T>>>),
+    Step2(Box<PromiseNode<T>>)
+}
+
+/// Promise node that reduces Promise<Promise<T>> to Promise<T>.
+pub struct Chain<T> {
+    state: ChainState<T>,
+}
+
+impl <T> Chain <T> {
+    pub fn new(inner: Box<PromiseNode<Promise<T>>>) -> Chain<T> {
+        Chain { state: ChainState::Step1(inner) }
     }
 }

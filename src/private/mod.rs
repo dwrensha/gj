@@ -175,3 +175,14 @@ impl <T> PromiseFulfiller<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFu
         self.borrow_mut().reject(error);
     }
 }
+
+/*
+trait ErrorHandler {
+    fn task_failed(error: Error);
+}
+
+struct TaskSetImpl {
+    error_handler: Box<ErrorHandler>,
+}
+
+*/

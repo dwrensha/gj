@@ -19,8 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#![allow(dead_code)]
-
 use std::cell::RefCell;
 use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
@@ -92,19 +90,11 @@ impl <T> Promise <T> where T: 'static {
     }
 }
 
-trait ErrorHandler {
-    fn task_failed(error: Error);
-}
-
-struct TaskSetImpl {
-    error_handler: Box<ErrorHandler>,
-}
-
 /// A queue of events being executed in a loop.
 pub struct EventLoop {
 //    daemons: TaskSetImpl,
     running: bool,
-    last_runnable_state: bool,
+    _last_runnable_state: bool,
     events: RefCell<::std::collections::VecDeque<Box<Event>>>,
     depth_first_events: RefCell<::std::collections::VecDeque<Box<Event>>>,
 }
@@ -114,7 +104,7 @@ impl EventLoop {
         EVENT_LOOP.with(|maybe_event_loop| {
             let event_loop = EventLoop {
                 running: false,
-                last_runnable_state: false,
+                _last_runnable_state: false,
                 events: RefCell::new(::std::collections::VecDeque::new()),
                 depth_first_events: RefCell::new(::std::collections::VecDeque::new()) };
 
