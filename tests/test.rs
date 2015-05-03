@@ -1,22 +1,51 @@
+// Copyright (c) 2013-2015 Sandstorm Development Group, Inc. and contributors
+// Licensed under the MIT License:
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
 extern crate gj;
 
 #[test]
-fn immediate() {
+fn eval_void() {
+    use std::rc::Rc;
+    use std::cell::Cell;
     ::gj::EventLoop::init();
-    {
-        let promise = ::gj::Promise::fulfilled(17u64);
-        let value = promise.wait().unwrap();
-        assert_eq!(value, 17);
-    }
+    let done = Rc::new(Cell::new(false));
+    let done1 = done.clone();
+    let promise = ::gj::Promise::fulfilled(()).map(move |()| {
+        done1.clone().set(true);
+        return Ok(());
+    });
+    assert_eq!(done.get(), false);
+    promise.wait().unwrap();
+    assert_eq!(done.get(), true);
+}
 
-    {
-        let promise = ::gj::Promise::fulfilled(19u64).map(|x| {
-            assert_eq!(x, 19);
-            return Ok(x + 2);
-        });
-        let value = promise.wait().unwrap();
-        assert_eq!(value, 21);
-    }
+#[test]
+fn eval_int() {
+    ::gj::EventLoop::init();
+    let promise = ::gj::Promise::fulfilled(19u64).map(|x| {
+        assert_eq!(x, 19);
+        return Ok(x + 2);
+    });
+    let value = promise.wait().unwrap();
+    assert_eq!(value, 21);
 }
 
 
