@@ -64,4 +64,19 @@ fn fulfiller() {
 
 }
 
+#[test]
+fn chain() {
+    gj::EventLoop::init();
 
+    let promise: gj::Promise<i32> = gj::Promise::fulfilled(()).map(|()| { return Ok(123); });
+    let promise2: gj::Promise<i32> = gj::Promise::fulfilled(()).map(|()| { return Ok(321); });
+
+    let promise3 = promise.then(move |i| {
+        return Ok(promise2.map(move |j| {
+            return Ok(i + j);
+        }));
+    });
+
+    //let value = promise3.wait().unwrap();
+    //assert_eq!(444, value);
+}

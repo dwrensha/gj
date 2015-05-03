@@ -41,11 +41,12 @@ impl <T> Promise <T> where T: 'static {
                   self.then_else(func, |e| { return Err(e); })
         }
 
-    pub fn then_else<F, G, R>(self, _func: F, _error_handler: G) -> Promise<R>
+    pub fn then_else<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
         where F: 'static + FnOnce(T) -> Result<Promise<R>>,
-              G: 'static + FnOnce(Error) -> Result<R>,
+              G: 'static + FnOnce(Error) -> Result<Promise<R>>,
               R: 'static {
-                  unimplemented!();
+            let intermediate = Box::new(promise_node::Transform::new(self.node, func, error_handler));
+            Promise { node: Box::new(promise_node::Chain::new(intermediate)) }
         }
 
     pub fn map<F, R>(self, func: F) -> Promise<R>
@@ -58,8 +59,7 @@ impl <T> Promise <T> where T: 'static {
         where F: 'static + FnOnce(T) -> Result<R>,
               G: 'static + FnOnce(Error) -> Result<R>,
               R: 'static {
-            let node : Box<PromiseNode<R>> = Box::new(promise_node::Transform::new(self.node, func, error_handler));
-            Promise { node: node }
+            Promise { node: Box::new(promise_node::Transform::new(self.node, func, error_handler)) }
         }
 
     pub fn wait(mut self) -> Result<T> {
