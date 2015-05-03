@@ -24,7 +24,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use {Result, Error, Promise};
-use private::{Event, with_current_event_loop, OnReadyEvent, PromiseNode};
+use private::{Event, with_current_event_loop, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -88,8 +88,8 @@ impl <T> PromiseNode<T> for Immediate<T> {
 }
 
 enum ChainState<T> {
-    Step1(Box<PromiseNode<Promise<T>>>, OnReadyEvent),
-    Step2(Box<PromiseNode<T>>, OnReadyEvent),
+    Step1(Box<PromiseNode<Promise<T>>>, Option<Box<Event>>),
+    Step2(Box<PromiseNode<T>>, Option<Box<Event>>),
     Step3 // done
 }
 
@@ -97,9 +97,29 @@ struct ChainEvent<T> {
     state: Rc<RefCell<ChainState<T>>>,
 }
 
-impl <T> Event for ChainEvent<T> {
+impl <T> Event for ChainEvent<T> where T: 'static {
     fn fire(&mut self) {
-        //        self.state
+        let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
+        match state {
+            ChainState::Step1(inner, on_ready_event) => {
+                match inner.get() {
+                    Ok(mut intermediate) => {
+                        match on_ready_event {
+                            Some(event) => {
+                                intermediate.node.on_ready(event);
+                            }
+                            None => {}
+                        }
+
+                        *self.state.borrow_mut() = ChainState::Step2(intermediate.node, None);
+                    }
+                    Err(_e) => {
+                        panic!()
+                    }
+                }
+            }
+            _ => panic!("should be in step 1"),
+        }
     }
 }
 
@@ -111,14 +131,10 @@ pub struct Chain<T> {
 impl <T> Chain<T> where T: 'static {
     pub fn new(mut inner: Box<PromiseNode<Promise<T>>>) -> Chain<T> {
 
-        // TODO:
-        // register an event for when the inner thing is ready.
-        //inner.on_ready(..)
         let state = Rc::new(RefCell::new(ChainState::Step3));
         let event = Box::new(ChainEvent { state: state.clone() });
-
         inner.on_ready(event);
-        *state.borrow_mut() = ChainState::Step1(inner, OnReadyEvent::Empty);
+        *state.borrow_mut() = ChainState::Step1(inner, None);
 
         Chain { state: state }
     }
@@ -130,12 +146,11 @@ impl <T> PromiseNode<T> for Chain<T> {
             &mut ChainState::Step2(ref mut inner, _) => {
                 inner.on_ready(event);
             }
-            &mut ChainState::Step1(_, OnReadyEvent::AlreadyReady) |
-            &mut ChainState::Step1(_, OnReadyEvent::Full(_)) => {
+            &mut ChainState::Step1(_, Some(_)) => {
                 panic!("on_ready() can only be called once.");
             }
             &mut ChainState::Step1(_, ref mut on_ready_event) => {
-                *on_ready_event = OnReadyEvent::Full(event);
+                *on_ready_event = Some(event);
             }
             _ => { panic!() }
         }

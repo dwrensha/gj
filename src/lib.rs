@@ -31,7 +31,7 @@ pub type Error = Box<::std::error::Error>;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 pub struct Promise<T> where T: 'static {
-    pub node : Box<PromiseNode<T>>,
+    node : Box<PromiseNode<T>>,
 }
 
 impl <T> Promise <T> where T: 'static {
@@ -135,13 +135,12 @@ impl EventLoop {
 
     fn turn(&self) -> bool {
         assert!(self.depth_first_events.borrow().is_empty());
-        match self.events.borrow_mut().pop_front() {
+        let mut event = match self.events.borrow_mut().pop_front() {
             None => return false,
-            Some(mut event) => {
-                // event->firing = true ?
-                event.fire();
-            }
-        }
+            Some(event) => { event }
+        };
+        event.fire();
+
         while !self.depth_first_events.borrow().is_empty() {
             let event = self.depth_first_events.borrow_mut().pop_back().unwrap();
             self.events.borrow_mut().push_front(event);

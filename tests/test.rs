@@ -72,11 +72,11 @@ fn chain() {
     let promise2: gj::Promise<i32> = gj::Promise::fulfilled(()).map(|()| { return Ok(321); });
 
     let promise3 = promise.then(move |i| {
-        return Ok(promise2.map(move |j| {
-            return Ok(i + j);
+        return Ok(promise2.then(move |j| {
+            return Ok(gj::Promise::fulfilled(i + j));
         }));
     });
 
-    //let value = promise3.wait().unwrap();
-    //assert_eq!(444, value);
+    let value = promise3.wait().unwrap();
+    assert_eq!(444, value);
 }
