@@ -30,6 +30,8 @@ mod private;
 pub type Error = Box<::std::error::Error>;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
+
+/// The basic primitive of asynchronous computation in GJ.
 pub struct Promise<T> where T: 'static {
     node : Box<PromiseNode<T>>,
 }
@@ -151,8 +153,8 @@ impl EventLoop {
 
 /// A callback which can be used to fulfill a promise.
 pub trait PromiseFulfiller<T> where T: 'static {
-    fn fulfill(&mut self, value: T);
-    fn reject(&mut self, error: Error);
+    fn fulfill(self: Box<Self>, value: T);
+    fn reject(self: Box<Self>, error: Error);
 }
 
 pub fn new_promise_and_fulfiller<T>() -> (Promise<T>, Box<PromiseFulfiller<T>>) where T: 'static {

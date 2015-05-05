@@ -133,7 +133,7 @@ impl <T> PromiseAndFulfillerHub<T> where T: 'static {
     }
 }
 
-impl <T> PromiseFulfiller<T> for PromiseAndFulfillerHub<T> where T: 'static {
+impl <T> PromiseAndFulfillerHub<T> where T: 'static {
     fn fulfill(&mut self, value: T) {
         if self.result.is_none() {
             self.result = Some(Ok(value));
@@ -167,11 +167,11 @@ impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfill
 }
 
 impl <T> PromiseFulfiller<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
-    fn fulfill(&mut self, value: T) {
+    fn fulfill(self: Box<Self>, value: T) {
         self.borrow_mut().fulfill(value);
     }
 
-    fn reject(&mut self, error: Error) {
+    fn reject(self: Box<Self>, error: Error) {
         self.borrow_mut().reject(error);
     }
 }

@@ -98,3 +98,73 @@ fn chain_error() {
 
     assert!(promise3.wait().is_err());
 }
+
+#[test]
+fn deep_chain2() {
+    gj::EventLoop::init();
+
+    let mut promise = gj::Promise::fulfilled(4u32);
+
+    for _ in 0..1000 {
+        promise = gj::Promise::fulfilled(()).then(|_| {
+            return Ok(promise);
+        });
+    }
+
+    let value = promise.wait().unwrap();
+
+    assert_eq!(value, 4);
+}
+
+#[test]
+fn ordering() {
+    use std::rc::Rc;
+    use std::cell::{Cell, RefCell};
+
+    gj::EventLoop::init();
+
+    let mut counter = Rc::new(Cell::new(0u32));
+    let counter0 = counter.clone();
+    let mut promises: Vec<Rc<RefCell<Option<gj::Promise<()>>>>> =
+        ::std::iter::repeat(Rc::new(RefCell::new(None))).take(6).collect();
+
+    let promises2 = promises[2].clone();
+    let promise3 = promises[3].clone();
+
+    *promises[0].borrow_mut() = Some(gj::Promise::fulfilled(()).then(move |_| {
+        assert_eq!(counter0.get(), 0);
+        counter0.set(1);
+
+        {
+            // Use a promise and fulfiller so that we can fulfill the promise after waiting on it in
+            // order to induce depth-first scheduling.
+            let (promise, fulfiller) = gj::new_promise_and_fulfiller::<()>();
+            let counter1 = counter0.clone();
+            *promises2.borrow_mut() = Some(promise.map(move |_| {
+                assert_eq!(counter1.get(), 1);
+                counter1.set(2);
+                return Ok(());
+            }));
+            fulfiller.fulfill(());
+        }
+
+        let counter4 = counter.clone();
+        // .map() is scheduled breadth-first is the promise has already resolved, but depth-first
+        // if the promise resolves later.
+        *promise3.borrow_mut() = Some(gj::Promise::fulfilled(()).map(move |_| {
+// this currently fails
+//            assert_eq!(counter4.get(), 4);
+            return Ok(());
+        }));
+
+        return Ok(gj::Promise::fulfilled(()));
+    }));
+
+        for p in promises.into_iter() {
+            let maybe_p = ::std::mem::replace(&mut *p.borrow_mut(), None);
+            match maybe_p {
+                None => {}
+                Some(p) => p.wait().unwrap(),
+            }
+        }
+}
