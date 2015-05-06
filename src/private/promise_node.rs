@@ -64,7 +64,6 @@ where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
     }
 }
 
-
 /// A promise that has already been resolved to an immediate value or error.
 pub struct Immediate<T> {
     result: Result<T>,

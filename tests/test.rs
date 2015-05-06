@@ -123,14 +123,15 @@ fn ordering() {
 
     gj::EventLoop::init();
 
-    let mut counter = Rc::new(Cell::new(0u32));
+    let counter = Rc::new(Cell::new(0u32));
     let counter0 = counter.clone();
-    let mut promises: Vec<Rc<RefCell<Option<gj::Promise<()>>>>> =
-        ::std::iter::repeat(Rc::new(RefCell::new(None))).take(6).collect();
+    let mut promises: Vec<Rc<RefCell<Option<gj::Promise<()>>>>> = Vec::new();
+    for _ in 0..6 {
+        promises.push(Rc::new(RefCell::new(None)));
+    }
 
-    let promises2 = promises[2].clone();
+    let promise2 = promises[2].clone();
     let promise3 = promises[3].clone();
-
     *promises[0].borrow_mut() = Some(gj::Promise::fulfilled(()).then(move |_| {
         assert_eq!(counter0.get(), 0);
         counter0.set(1);
@@ -140,7 +141,7 @@ fn ordering() {
             // order to induce depth-first scheduling.
             let (promise, fulfiller) = gj::new_promise_and_fulfiller::<()>();
             let counter1 = counter0.clone();
-            *promises2.borrow_mut() = Some(promise.map(move |_| {
+            *promise2.borrow_mut() = Some(promise.map(move |_| {
                 assert_eq!(counter1.get(), 1);
                 counter1.set(2);
                 return Ok(());
@@ -152,19 +153,20 @@ fn ordering() {
         // .map() is scheduled breadth-first is the promise has already resolved, but depth-first
         // if the promise resolves later.
         *promise3.borrow_mut() = Some(gj::Promise::fulfilled(()).map(move |_| {
-// this currently fails
-//            assert_eq!(counter4.get(), 4);
+            assert_eq!(counter4.get(), 2);
             return Ok(());
         }));
 
         return Ok(gj::Promise::fulfilled(()));
     }));
 
-        for p in promises.into_iter() {
-            let maybe_p = ::std::mem::replace(&mut *p.borrow_mut(), None);
-            match maybe_p {
-                None => {}
-                Some(p) => p.wait().unwrap(),
+    for p in promises.into_iter() {
+        let maybe_p = ::std::mem::replace(&mut *p.borrow_mut(), None);
+        match maybe_p {
+            None => {}
+            Some(p) => {
+                p.wait().unwrap()
             }
         }
+    }
 }
