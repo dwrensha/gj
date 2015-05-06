@@ -144,7 +144,7 @@ impl EventLoop {
         event.fire();
 
         while !self.depth_first_events.borrow().is_empty() {
-            let event = self.depth_first_events.borrow_mut().pop_back().unwrap();
+            let event = self.depth_first_events.borrow_mut().pop_front().unwrap();
             self.events.borrow_mut().push_front(event);
         }
         return true;

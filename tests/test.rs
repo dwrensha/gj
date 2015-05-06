@@ -52,7 +52,7 @@ fn eval_int() {
 #[test]
 fn fulfiller() {
     gj::EventLoop::init();
-    let (promise, mut fulfiller) = gj::new_promise_and_fulfiller::<u32>();
+    let (promise, fulfiller) = gj::new_promise_and_fulfiller::<u32>();
     let p1 = promise.map(|x| {
         assert_eq!(x, 10);
         return Ok(x + 1);
@@ -124,7 +124,10 @@ fn ordering() {
     gj::EventLoop::init();
 
     let counter = Rc::new(Cell::new(0u32));
-    let counter0 = counter.clone();
+    let (counter0, counter1, counter2, counter3, counter4, counter5, counter6) =
+        (counter.clone(), counter.clone(), counter.clone(), counter.clone(), counter.clone(),
+         counter.clone(), counter.clone());
+
     let mut promises: Vec<Rc<RefCell<Option<gj::Promise<()>>>>> = Vec::new();
     for _ in 0..6 {
         promises.push(Rc::new(RefCell::new(None)));
@@ -132,7 +135,9 @@ fn ordering() {
 
     let promise2 = promises[2].clone();
     let promise3 = promises[3].clone();
-    *promises[0].borrow_mut() = Some(gj::Promise::fulfilled(()).then(move |_| {
+    let promise4 = promises[4].clone();
+    let promise5 = promises[5].clone();
+    *promises[1].borrow_mut() = Some(gj::Promise::fulfilled(()).then(move |_| {
         assert_eq!(counter0.get(), 0);
         counter0.set(1);
 
@@ -140,23 +145,48 @@ fn ordering() {
             // Use a promise and fulfiller so that we can fulfill the promise after waiting on it in
             // order to induce depth-first scheduling.
             let (promise, fulfiller) = gj::new_promise_and_fulfiller::<()>();
-            let counter1 = counter0.clone();
-            *promise2.borrow_mut() = Some(promise.map(move |_| {
+            *promise2.borrow_mut() = Some(promise.then(move |_| {
                 assert_eq!(counter1.get(), 1);
                 counter1.set(2);
-                return Ok(());
+                return Ok(gj::Promise::fulfilled(()));
             }));
             fulfiller.fulfill(());
         }
 
-        let counter4 = counter.clone();
-        // .map() is scheduled breadth-first is the promise has already resolved, but depth-first
+        // .map() is scheduled breadth-first if the promise has already resolved, but depth-first
         // if the promise resolves later.
         *promise3.borrow_mut() = Some(gj::Promise::fulfilled(()).map(move |_| {
-            assert_eq!(counter4.get(), 2);
+            assert_eq!(counter4.get(), 4); // XXX
+            counter4.set(5);
+            return Ok(());
+        }).map(move |_| {
+            assert_eq!(counter5.get(), 5);
+            counter5.set(6);
             return Ok(());
         }));
 
+        {
+            let (promise, fulfiller) = gj::new_promise_and_fulfiller::<()>();
+            *promise4.borrow_mut() = Some(promise.then(move |_| {
+                assert_eq!(counter2.get(), 2);
+                counter2.set(3);
+                return Ok(gj::Promise::fulfilled(()));
+            }));
+            fulfiller.fulfill(());
+        }
+
+        *promise5.borrow_mut() = Some(gj::Promise::fulfilled(()).map(move |_| {
+            assert_eq!(counter6.get(), 6);
+            counter6.set(7);
+            return Ok(());
+        }));
+
+        return Ok(gj::Promise::fulfilled(()));
+    }));
+
+    *promises[0].borrow_mut() = Some(gj::Promise::fulfilled(()).then(move |_| {
+        assert_eq!(counter3.get(), 3);
+        counter3.set(4);
         return Ok(gj::Promise::fulfilled(()));
     }));
 
@@ -169,4 +199,6 @@ fn ordering() {
             }
         }
     }
+
+    assert_eq!(counter.get(), 7);
 }
