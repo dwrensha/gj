@@ -33,3 +33,26 @@ pub trait AsyncWrite {
     // Can we avoid that somehow?
     fn write(buf: Vec<u8>) -> Promise<()>;
 }
+
+
+
+pub enum StepResult<T, S> {
+   TheresMore(S),
+   Done(T)
+}
+
+/// Intermediate state for a reading a T.
+pub trait AsyncReadState<T> {
+
+   /// Reads as much as possible without blocking. If done, returns the final T value. Otherwise
+   /// returns the new intermediate state T.
+   fn read_step<R: ::std::io::Read>(self, r: &mut R) -> ::std::io::Result<StepResult<T,Self>>;
+}
+
+/// Gives back `r` once the T has been completely read.
+fn read_async<R, S, T>(r: R, state: S) -> Promise<(R, T)>
+  where R: ::std::io::Read + 'static,
+        S: AsyncReadState<T> + 'static,
+        T: 'static {
+            unimplemented!();
+}

@@ -117,6 +117,20 @@ fn deep_chain2() {
 }
 
 #[test]
+fn separate_fulfiller_chained() {
+    gj::EventLoop::init();
+
+    let (promise, fulfiller) = gj::new_promise_and_fulfiller::<gj::Promise<i32>>();
+    let (inner_promise, inner_fulfiller) = gj::new_promise_and_fulfiller::<i32>();
+
+    fulfiller.fulfill(inner_promise);
+    inner_fulfiller.fulfill(123);
+
+    let value = promise.wait().unwrap().wait().unwrap(); // KJ gets away with only one wait() here.
+    assert_eq!(value, 123);
+}
+
+#[test]
 fn ordering() {
     use std::rc::Rc;
     use std::cell::{Cell, RefCell};
@@ -155,10 +169,10 @@ fn ordering() {
 
         // .map() is scheduled breadth-first if the promise has already resolved, but depth-first
         // if the promise resolves later.
-        *promise3.borrow_mut() = Some(gj::Promise::fulfilled(()).map(move |_| {
+        *promise3.borrow_mut() = Some(gj::Promise::fulfilled(()).then(move |_| {
             assert_eq!(counter4.get(), 4); // XXX
             counter4.set(5);
-            return Ok(());
+            return Ok(gj::Promise::fulfilled(()));
         }).map(move |_| {
             assert_eq!(counter5.get(), 5);
             counter5.set(6);
