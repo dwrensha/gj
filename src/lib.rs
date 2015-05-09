@@ -19,6 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+extern crate mio;
+
 use std::cell::RefCell;
 use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
@@ -90,6 +92,26 @@ impl <T> Promise <T> where T: 'static {
     pub fn rejected(error: Error) -> Promise<T> {
         return Promise { node: Box::new(promise_node::Immediate::new(Err(error))) };
     }
+}
+
+/// Interface between an `EventLoop` and events originating from outside of the loop's thread.
+pub trait EventPort {
+    /// Waits for an external event to arrive, sleeping if necessary.
+    /// Returns true if wake() has been called from another thread.
+    fn wait(&mut self) -> bool;
+
+    /// Checks whether any external events have arrived, but does not sleep.
+    /// Returns true if wake() has been called from another thread.
+    fn poll(&mut self) -> bool;
+
+    /// Called to notify the `EventPort` when the `EventLoop` has work to do; specifically when i
+    /// transitions from empty -> runnable or runnable -> empty. This is typically useful when
+    /// intergrating with an external event loop; if the loop is currently runnable then you should
+    /// arrange to call run() on it soon. The default implementation does nothing.
+    fn set_runnable(&mut self, _runnable: bool) { }
+
+
+    fn wake(&mut self) { unimplemented!(); }
 }
 
 /// A queue of events being executed in a loop.

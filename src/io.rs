@@ -19,7 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use Promise;
+use mio::util::Slab;
+use {EventPort, Promise, Result};
 
 pub trait AsyncRead {
     fn read(self: Box<Self>, buf: Vec<u8>, min_bytes: usize, max_bytes: usize)
@@ -35,7 +36,61 @@ pub trait AsyncWrite {
 }
 
 
-// alternate approach below
+
+/*
+pub struct AsyncIoContext {
+    x: (),
+}
+*/
+
+
+pub struct FdObserver {
+    _fd: ::std::os::unix::io::RawFd,
+//    read_fulfiller: Option<>,
+}
+
+pub struct EventPortImpl {
+    handler: Handler,
+    reactor: ::mio::EventLoop<Handler>,
+}
+
+pub struct Handler {
+    observers: Slab<FdObserver>,
+}
+
+impl EventPortImpl {
+    pub fn new() -> Result<EventPortImpl> {
+        Ok(EventPortImpl {
+            handler: Handler { observers: Slab::new(100) },
+            reactor: try!(::mio::EventLoop::new()),
+        })
+    }
+}
+
+impl ::mio::Handler for Handler {
+    type Timeout = ();
+    type Message = ();
+    fn readable(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
+                token: ::mio::Token, _hint: ::mio::ReadHint) {
+        &self.observers[token];
+    }
+    fn writable(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, _token: ::mio::Token) {
+
+    }
+}
+
+impl EventPort for EventPortImpl {
+    fn wait(&mut self) -> bool {
+        return false;
+    }
+
+    fn poll(&mut self) -> bool {
+        self.reactor.run_once(&mut self.handler).unwrap();
+        return false;
+    }
+}
+
+// alternate approach below =========
 
 pub enum StepResult<S, T> {
    TheresMore(S),

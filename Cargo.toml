@@ -9,7 +9,7 @@ repository = "https://github.com/dwrensha/gj"
 
 readme = "README.md"
 
-keywords = ["promise", "async"]
+keywords = ["promise", "async", "io"]
 
 [dependencies.mio]
 git = "https://github.com/carllerche/mio"
