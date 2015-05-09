@@ -11,8 +11,5 @@ readme = "README.md"
 
 keywords = ["promise", "async"]
 
-[lib]
-
-name = "gj"
-path = "src/lib.rs"
-
+[dependencies.mio]
+git = "https://github.com/carllerche/mio"

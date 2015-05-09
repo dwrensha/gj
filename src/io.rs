@@ -20,10 +20,10 @@
 // THE SOFTWARE.
 
 use Promise;
-use std::rc::Rc;
 
 pub trait AsyncRead {
-    fn read(buf: Rc<Vec<u8>>, start: usize, min_bytes: usize) -> Promise<u32>;
+    fn read(self: Box<Self>, buf: Vec<u8>, min_bytes: usize, max_bytes: usize)
+            -> Promise<(Box<Self>, Vec<u8>, usize)>;
 }
 
 
@@ -31,12 +31,13 @@ pub trait AsyncWrite {
 
     // Hm. Seems like the caller is often going to need to do an extra copy here.
     // Can we avoid that somehow?
-    fn write(buf: Vec<u8>) -> Promise<()>;
+    fn write(self: Box<Self>, buf: Vec<u8>) -> Promise<(Box<Self>, Vec<u8>)>;
 }
 
 
+// alternate approach below
 
-pub enum StepResult<T, S> {
+pub enum StepResult<S, T> {
    TheresMore(S),
    Done(T)
 }
@@ -46,11 +47,11 @@ pub trait AsyncReadState<T> {
 
    /// Reads as much as possible without blocking. If done, returns the final T value. Otherwise
    /// returns the new intermediate state T.
-   fn read_step<R: ::std::io::Read>(self, r: &mut R) -> ::std::io::Result<StepResult<T,Self>>;
+   fn read_step(self, r: &mut ::std::io::Read) -> ::std::io::Result<StepResult<Self, T>>;
 }
 
 /// Gives back `r` once the T has been completely read.
-fn read_async<R, S, T>(r: R, state: S) -> Promise<(R, T)>
+pub fn read_async<R, S, T>(_r: R, _state: S) -> Promise<(R, T)>
   where R: ::std::io::Read + 'static,
         S: AsyncReadState<T> + 'static,
         T: 'static {
