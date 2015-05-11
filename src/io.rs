@@ -20,6 +20,7 @@
 // THE SOFTWARE.
 
 use mio::util::Slab;
+use mio::Socket;
 use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
@@ -49,6 +50,7 @@ impl NetworkAddress {
 
     pub fn listen(self) -> Result<ConnectionReceiver> {
         let socket = try!(::mio::tcp::TcpSocket::v4());
+        try!(socket.set_reuseaddr(true));
         try!(socket.bind(&self.address));
         let token = FdObserver::new();
         Ok(ConnectionReceiver { listener: try!(socket.listen(256)),
@@ -89,7 +91,8 @@ impl ConnectionReceiver {
                 event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
             event_loop.event_port.borrow_mut().reactor.register_opt(&self.listener, self.token,
                                                                     ::mio::Interest::readable(),
-                                                                    ::mio::PollOpt::edge()).unwrap();
+                                                                    ::mio::PollOpt::edge()|
+                                                                    ::mio::PollOpt::oneshot()).unwrap();
             return promise.map(move |()| {
                 let stream = self.listener.accept().unwrap().unwrap();
                 let token = FdObserver::new();
@@ -105,11 +108,12 @@ pub struct AsyncIoStream {
     token: ::mio::Token,
 }
 
-/*
-pub struct AsyncIoContext {
-    x: (),
+impl AsyncRead for AsyncIoStream {
+    fn read(self: Box<Self>, _buf: Vec<u8>,
+            _min_bytes: usize, _max_bytes: usize) -> Promise<(Box<Self>, Vec<u8>, usize)> {
+        unimplemented!()
+    }
 }
-*/
 
 
 pub struct FdObserver {

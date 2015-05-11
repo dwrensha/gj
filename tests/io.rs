@@ -26,10 +26,7 @@ fn hello() {
     gj::EventLoop::init();
 
     let addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("127.0.0.1:10000").unwrap());
-    let receiver = match addr.listen() {
-        Ok(r) => r,
-        Err(e) => panic!("{}", e),
-    };
+    let receiver = addr.listen().unwrap();
     let promise = receiver.accept();
 
     let _connect_promise = addr.connect();
