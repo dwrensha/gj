@@ -23,12 +23,22 @@ extern crate gj;
 
 #[test]
 fn hello() {
+    use gj::io::{AsyncRead, AsyncWrite};
     gj::EventLoop::init();
 
     let addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("127.0.0.1:10000").unwrap());
-    let receiver = addr.listen().unwrap();
-    let promise = receiver.accept();
 
-    let _connect_promise = addr.connect();
-    promise.wait().unwrap();
+    let receiver = addr.listen().unwrap();
+
+    let _write_promise = receiver.accept().then(move |(_, stream)| {
+        return Ok(stream.write(vec![0,1,2,3,4,5]));
+    });
+
+    let read_promise = addr.connect().then(move |stream| {
+        return Ok(stream.read(vec![0u8; 6], 6, 6));
+    });
+
+    let (_, buf, _) = read_promise.wait().unwrap();
+
+    assert_eq!(&buf[..], [0,1,2,3,4,5]);
 }

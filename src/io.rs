@@ -25,8 +25,8 @@ use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
 pub trait AsyncRead {
-    fn read(self: Box<Self>, buf: Vec<u8>, min_bytes: usize, max_bytes: usize)
-            -> Promise<(Box<Self>, Vec<u8>, usize)>;
+    fn read(self: Self, buf: Vec<u8>, min_bytes: usize, max_bytes: usize)
+            -> Promise<(Self, Vec<u8>, usize)>;
 }
 
 
@@ -34,7 +34,7 @@ pub trait AsyncWrite {
 
     // Hm. Seems like the caller is often going to need to do an extra copy here.
     // Can we avoid that somehow?
-    fn write(self: Box<Self>, buf: Vec<u8>) -> Promise<(Box<Self>, Vec<u8>)>;
+    fn write(self: Self, buf: Vec<u8>) -> Promise<(Self, Vec<u8>)>;
 }
 
 
@@ -62,11 +62,17 @@ impl NetworkAddress {
         let token = FdObserver::new();
         let (stream, _) = socket.connect(&self.address).unwrap();
         with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().reactor.register_opt(&stream, token,
+                                                                    ::mio::Interest::writable(),
+                                                                    ::mio::PollOpt::edge()|
+                                                                    ::mio::PollOpt::oneshot()).unwrap();
+
+
             let promise =
                 event_loop.event_port.borrow_mut().handler.observers[token].when_becomes_writable();
             return promise.map(move |()| {
-                return Ok(AsyncIoStream { stream: stream,
-                                          token: token });
+                // TODO check for error.
+                return Ok(AsyncIoStream::new(stream, token));
             });
         })
     }
@@ -94,9 +100,9 @@ impl ConnectionReceiver {
                                                                     ::mio::PollOpt::edge()|
                                                                     ::mio::PollOpt::oneshot()).unwrap();
             return promise.map(move |()| {
-                let stream = self.listener.accept().unwrap().unwrap();
+                let stream = try!(self.listener.accept()).unwrap();
                 let token = FdObserver::new();
-                return Ok((self, AsyncIoStream { stream: stream, token: token }));
+                return Ok((self, AsyncIoStream::new(stream, token)));
             });
         })
     }
@@ -108,10 +114,61 @@ pub struct AsyncIoStream {
     token: ::mio::Token,
 }
 
+impl AsyncIoStream {
+    fn new(stream: ::mio::tcp::TcpStream, token: ::mio::Token) -> AsyncIoStream {
+        with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().reactor.register_opt(
+                &stream, token,
+                ::mio::Interest::readable() | ::mio::Interest::writable(),
+                ::mio::PollOpt::level()).unwrap();
+            AsyncIoStream { stream: stream, token: token }
+        })
+    }
+
+    fn read_internal(mut self, mut buf: Vec<u8>, start: usize,
+                     min_bytes: usize, max_bytes: usize) -> Promise<(Self, Vec<u8>, usize)> {
+        if start >= min_bytes {
+            return Promise::fulfilled((self, buf, start));
+        } else {
+            with_current_event_loop(move |event_loop| {
+                let promise =
+                    event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
+                return promise.then(move |()| {
+                    use mio::TryRead;
+                    let n = try!(self.stream.read_slice(&mut buf[start..])).unwrap();
+                    return Ok(self.read_internal(buf, start + n, min_bytes, max_bytes));
+                });
+            })
+        }
+    }
+
+    fn write_internal(mut self, buf: Vec<u8>, cursor: usize) -> Promise<(Self, Vec<u8>)> {
+        if cursor == buf.len() {
+            return Promise::fulfilled((self, buf));
+        } else {
+            with_current_event_loop(move |event_loop| {
+                let promise =
+                    event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_writable();
+                return promise.then(move |()| {
+                    use mio::TryWrite;
+                    let n = try!(self.stream.write_slice(&buf[cursor..])).unwrap();
+                    return Ok(self.write_internal(buf, cursor + n));
+                });
+            })
+        }
+    }
+}
+
 impl AsyncRead for AsyncIoStream {
-    fn read(self: Box<Self>, _buf: Vec<u8>,
-            _min_bytes: usize, _max_bytes: usize) -> Promise<(Box<Self>, Vec<u8>, usize)> {
-        unimplemented!()
+    fn read(self, buf: Vec<u8>,
+            min_bytes: usize, max_bytes: usize) -> Promise<(Self, Vec<u8>, usize)> {
+        self.read_internal(buf, 0, min_bytes, max_bytes)
+    }
+}
+
+impl AsyncWrite for AsyncIoStream {
+    fn write(self, buf: Vec<u8>) -> Promise<(Self, Vec<u8>)> {
+        self.write_internal(buf, 0)
     }
 }
 
