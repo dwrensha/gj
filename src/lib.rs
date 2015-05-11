@@ -77,7 +77,7 @@ impl <T> Promise <T> where T: 'static {
             while !fired.get() {
                 if !event_loop.turn() {
                     // No events in the queue.
-                    panic!("need to implement EventPort");
+                    event_loop.event_port.borrow_mut().wait();
                 }
             }
 
@@ -104,7 +104,7 @@ pub trait EventPort {
     /// Returns true if wake() has been called from another thread.
     fn poll(&mut self) -> bool;
 
-    /// Called to notify the `EventPort` when the `EventLoop` has work to do; specifically when i
+    /// Called to notify the `EventPort` when the `EventLoop` has work to do; specifically when it
     /// transitions from empty -> runnable or runnable -> empty. This is typically useful when
     /// intergrating with an external event loop; if the loop is currently runnable then you should
     /// arrange to call run() on it soon. The default implementation does nothing.
@@ -117,6 +117,7 @@ pub trait EventPort {
 /// A queue of events being executed in a loop.
 pub struct EventLoop {
 //    daemons: TaskSetImpl,
+    event_port: RefCell<io::MioEventPort>,
     running: bool,
     _last_runnable_state: bool,
     events: RefCell<::std::collections::VecDeque<Box<Event>>>,
@@ -127,6 +128,7 @@ impl EventLoop {
     pub fn init() {
         EVENT_LOOP.with(|maybe_event_loop| {
             let event_loop = EventLoop {
+                event_port: RefCell::new(io::MioEventPort::new().unwrap()),
                 running: false,
                 _last_runnable_state: false,
                 events: RefCell::new(::std::collections::VecDeque::new()),
@@ -158,17 +160,20 @@ impl EventLoop {
     }
 
     fn turn(&self) -> bool {
+
+        while !self.depth_first_events.borrow().is_empty() {
+            let event = self.depth_first_events.borrow_mut().pop_front().unwrap();
+            self.events.borrow_mut().push_front(event);
+        }
+
         assert!(self.depth_first_events.borrow().is_empty());
+
         let mut event = match self.events.borrow_mut().pop_front() {
             None => return false,
             Some(event) => { event }
         };
         event.fire();
 
-        while !self.depth_first_events.borrow().is_empty() {
-            let event = self.depth_first_events.borrow_mut().pop_front().unwrap();
-            self.events.borrow_mut().push_front(event);
-        }
         return true;
     }
 }
