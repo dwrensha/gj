@@ -100,7 +100,7 @@ impl ConnectionReceiver {
                 event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
             event_loop.event_port.borrow_mut().reactor.register_opt(&self.listener, self.token,
                                                                     ::mio::Interest::readable(),
-                                                                    ::mio::PollOpt::edge()|
+                                                                    ::mio::PollOpt::edge() |
                                                                     ::mio::PollOpt::oneshot()).unwrap();
             return promise.map(move |()| {
                 let stream = try!(self.listener.accept()).unwrap();
@@ -123,7 +123,7 @@ impl AsyncIoStream {
             event_loop.event_port.borrow_mut().reactor.register_opt(
                 &stream, token,
                 ::mio::Interest::readable() | ::mio::Interest::writable(),
-                ::mio::PollOpt::level()).unwrap();
+                ::mio::PollOpt::edge()).unwrap();
             AsyncIoStream { stream: stream, token: token }
         })
     }
@@ -264,27 +264,4 @@ impl EventPort for MioEventPort {
         self.reactor.run_once(&mut self.handler).unwrap();
         return false;
     }
-}
-
-// alternate approach below =========
-
-pub enum StepResult<S, T> {
-   TheresMore(S),
-   Done(T)
-}
-
-/// Intermediate state for a reading a T.
-pub trait AsyncReadState<T> {
-
-   /// Reads as much as possible without blocking. If done, returns the final T value. Otherwise
-   /// returns the new intermediate state T.
-   fn read_step(self, r: &mut ::std::io::Read) -> ::std::io::Result<StepResult<Self, T>>;
-}
-
-/// Gives back `r` once the T has been completely read.
-pub fn read_async<R, S, T>(_r: R, _state: S) -> Promise<(R, T)>
-  where R: ::std::io::Read + 'static,
-        S: AsyncReadState<T> + 'static,
-        T: 'static {
-            unimplemented!();
 }
