@@ -66,13 +66,19 @@ impl NetworkAddress {
                                                                     ::mio::Interest::writable(),
                                                                     ::mio::PollOpt::edge()|
                                                                     ::mio::PollOpt::oneshot()).unwrap();
-
-
             let promise =
                 event_loop.event_port.borrow_mut().handler.observers[token].when_becomes_writable();
             return promise.map(move |()| {
                 // TODO check for error.
-                return Ok(AsyncIoStream::new(stream, token));
+
+                return with_current_event_loop(move |event_loop| {
+                    event_loop.event_port.borrow_mut().reactor.reregister(
+                        &stream, token,
+                        ::mio::Interest::writable() | ::mio::Interest::readable(),
+                        ::mio::PollOpt::edge()).unwrap();
+                    return Ok(AsyncIoStream { stream: stream, token: token });
+                });
+
             });
         })
     }
