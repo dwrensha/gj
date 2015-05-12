@@ -19,6 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::ops::{DerefMut, Deref};
 use mio::util::Slab;
 use mio::Socket;
@@ -54,7 +56,7 @@ impl NetworkAddress {
                                 token: token })
     }
 
-    pub fn connect(self) -> Promise<AsyncIoStream> {
+    pub fn connect(self) -> Promise<(AsyncOutputStream, AsyncInputStream)> {
         let socket = ::mio::tcp::TcpSocket::v4().unwrap();
         let token = FdObserver::new();
         let (stream, _) = socket.connect(&self.address).unwrap();
@@ -73,7 +75,7 @@ impl NetworkAddress {
                         &stream, token,
                         ::mio::Interest::writable() | ::mio::Interest::readable(),
                         ::mio::PollOpt::edge()).unwrap();
-                    return Ok(AsyncIoStream { stream: stream, token: token });
+                    return Ok(AsyncIo::new(stream, token));
                 });
 
             });
@@ -94,7 +96,7 @@ impl Drop for ConnectionReceiver {
 }
 
 impl ConnectionReceiver {
-    pub fn accept(self) -> Promise<(ConnectionReceiver, AsyncIoStream)> {
+    pub fn accept(self) -> Promise<(ConnectionReceiver, (AsyncOutputStream, AsyncInputStream))> {
         with_current_event_loop(move |event_loop| {
             let promise =
                 event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
@@ -105,29 +107,42 @@ impl ConnectionReceiver {
             return promise.map(move |()| {
                 let stream = try!(self.listener.accept()).unwrap();
                 let token = FdObserver::new();
-                return Ok((self, AsyncIoStream::new(stream, token)));
+
+                return with_current_event_loop(move |event_loop| {
+                    event_loop.event_port.borrow_mut().reactor.reregister(
+                        &stream, token,
+                        ::mio::Interest::writable() | ::mio::Interest::readable(),
+                        ::mio::PollOpt::edge()).unwrap();
+                    return Ok((self, AsyncIo::new(stream, token)));
+                });
             });
         })
     }
 }
 
-pub struct AsyncIoStream {
+pub struct AsyncInputStream {
+    hub: Rc<RefCell<AsyncIo>>
+}
+
+pub struct AsyncOutputStream {
+    hub: Rc<RefCell<AsyncIo>>
+}
+
+struct AsyncIo {
     stream: ::mio::tcp::TcpStream,
     token: ::mio::Token,
 }
 
-impl AsyncIoStream {
-    fn new(stream: ::mio::tcp::TcpStream, token: ::mio::Token) -> AsyncIoStream {
-        with_current_event_loop(move |event_loop| {
-            event_loop.event_port.borrow_mut().reactor.register_opt(
-                &stream, token,
-                ::mio::Interest::readable() | ::mio::Interest::writable(),
-                ::mio::PollOpt::edge()).unwrap();
-            AsyncIoStream { stream: stream, token: token }
-        })
-    }
+impl AsyncIo {
+    fn new(stream: ::mio::tcp::TcpStream, token: ::mio::Token) -> (AsyncOutputStream, AsyncInputStream) {
+        let hub = Rc::new(RefCell::new(AsyncIo { stream: stream, token: token }));
 
-    fn read_internal<T>(mut self,
+        (AsyncOutputStream { hub: hub.clone() }, AsyncInputStream { hub: hub } )
+    }
+}
+
+impl AsyncInputStream {
+    fn read_internal<T>(self,
                         mut buf: T,
                         start: usize,
                         min_bytes: usize,
@@ -137,17 +152,19 @@ impl AsyncIoStream {
         } else {
             with_current_event_loop(move |event_loop| {
                 let promise =
-                    event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
+                    event_loop.event_port.borrow_mut().handler.observers[self.hub.borrow().token].when_becomes_readable();
                 return promise.then(move |()| {
                     use mio::TryRead;
-                    let n = try!(self.stream.read_slice(&mut buf[start..])).unwrap();
+                    let n = try!(self.hub.borrow_mut().stream.read_slice(&mut buf[start..])).unwrap();
                     return Ok(self.read_internal(buf, start + n, min_bytes, max_bytes));
                 });
             })
         }
     }
+}
 
-    fn write_internal<T>(mut self,
+impl AsyncOutputStream {
+    fn write_internal<T>(self,
                          buf: T,
                          cursor: usize) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
         if cursor == buf.len() {
@@ -155,10 +172,10 @@ impl AsyncIoStream {
         } else {
             with_current_event_loop(move |event_loop| {
                 let promise =
-                    event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_writable();
+                    event_loop.event_port.borrow_mut().handler.observers[self.hub.borrow().token].when_becomes_writable();
                 return promise.then(move |()| {
                     use mio::TryWrite;
-                    let n = try!(self.stream.write_slice(&buf[cursor..])).unwrap();
+                    let n = try!(self.hub.borrow_mut().stream.write_slice(&buf[cursor..])).unwrap();
                     return Ok(self.write_internal(buf, cursor + n));
                 });
             })
@@ -166,7 +183,7 @@ impl AsyncIoStream {
     }
 }
 
-impl AsyncRead for AsyncIoStream {
+impl AsyncRead for AsyncInputStream {
     fn read<T>(self, buf: T,
                min_bytes: usize,
                max_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
@@ -174,7 +191,7 @@ impl AsyncRead for AsyncIoStream {
     }
 }
 
-impl AsyncWrite for AsyncIoStream {
+impl AsyncWrite for AsyncOutputStream {
     fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
         self.write_internal(buf, 0)
     }

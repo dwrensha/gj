@@ -30,12 +30,12 @@ fn hello() {
 
     let receiver = addr.listen().unwrap();
 
-    let _write_promise = receiver.accept().then(move |(_, stream)| {
-        return Ok(stream.write(vec![0,1,2,3,4,5]));
+    let _write_promise = receiver.accept().then(move |(_, (tx, _rx))| {
+        return Ok(tx.write(vec![0,1,2,3,4,5]));
     });
 
-    let read_promise = addr.connect().then(move |stream| {
-        return Ok(stream.read(vec![0u8; 6], 6, 6));
+    let read_promise = addr.connect().then(move |(_tx, rx)| {
+        return Ok(rx.read(vec![0u8; 6], 6, 6));
     });
 
     let (_, buf, _) = read_promise.wait().unwrap();
