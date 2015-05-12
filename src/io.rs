@@ -19,42 +19,21 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use std::ops::{DerefMut, Deref};
 use mio::util::Slab;
 use mio::Socket;
 use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
-pub trait MutBuf {
-    fn mut_bytes<'a>(&'a mut self) -> &'a mut [u8];
-}
-
-pub trait Buf {
-    fn bytes<'a>(&'a self) -> &'a [u8];
-}
-
-impl MutBuf for Vec<u8> {
-    fn mut_bytes<'a>(&'a mut self) -> &'a mut [u8] {
-        self
-    }
-}
-
-impl <T> Buf for T where T: AsRef<[u8]> {
-    fn bytes<'a>(&'a self) -> &'a [u8] {
-        self.as_ref()
-    }
-}
-
 pub trait AsyncRead {
     fn read<T>(self: Self, buf: T, min_bytes: usize, max_bytes: usize) -> Promise<(Self, T, usize)>
-        where T: MutBuf;
+        where T: DerefMut<Target=[u8]>;
 }
-
 
 pub trait AsyncWrite {
     fn write<T>(self: Self, buf: T) -> Promise<(Self, T)>
-        where T: Buf;
+        where T: Deref<Target=[u8]>;
 }
-
 
 #[derive(Copy, Clone)]
 pub struct NetworkAddress {
@@ -153,7 +132,7 @@ impl AsyncIoStream {
                         mut buf: T,
                         start: usize,
                         min_bytes: usize,
-                        max_bytes: usize) -> Promise<(Self, T, usize)> where T: MutBuf {
+                        max_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         if start >= min_bytes {
             return Promise::fulfilled((self, buf, start));
         } else {
@@ -162,7 +141,7 @@ impl AsyncIoStream {
                     event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
                 return promise.then(move |()| {
                     use mio::TryRead;
-                    let n = try!(self.stream.read_slice(&mut buf.mut_bytes()[start..])).unwrap();
+                    let n = try!(self.stream.read_slice(&mut buf[start..])).unwrap();
                     return Ok(self.read_internal(buf, start + n, min_bytes, max_bytes));
                 });
             })
@@ -171,8 +150,8 @@ impl AsyncIoStream {
 
     fn write_internal<T>(mut self,
                          buf: T,
-                         cursor: usize) -> Promise<(Self, T)> where T: Buf {
-        if cursor == buf.bytes().len() {
+                         cursor: usize) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
+        if cursor == buf.len() {
             return Promise::fulfilled((self, buf));
         } else {
             with_current_event_loop(move |event_loop| {
@@ -180,7 +159,7 @@ impl AsyncIoStream {
                     event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_writable();
                 return promise.then(move |()| {
                     use mio::TryWrite;
-                    let n = try!(self.stream.write_slice(&buf.bytes()[cursor..])).unwrap();
+                    let n = try!(self.stream.write_slice(&buf[cursor..])).unwrap();
                     return Ok(self.write_internal(buf, cursor + n));
                 });
             })
@@ -191,13 +170,13 @@ impl AsyncIoStream {
 impl AsyncRead for AsyncIoStream {
     fn read<T>(self, buf: T,
                min_bytes: usize,
-               max_bytes: usize) -> Promise<(Self, T, usize)> where T: MutBuf {
+               max_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         self.read_internal(buf, 0, min_bytes, max_bytes)
     }
 }
 
 impl AsyncWrite for AsyncIoStream {
-    fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Buf {
+    fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
         self.write_internal(buf, 0)
     }
 }
