@@ -24,17 +24,35 @@ use mio::Socket;
 use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
+pub trait MutBuf {
+    fn mut_bytes<'a>(&'a mut self) -> &'a mut [u8];
+}
+
+pub trait Buf {
+    fn bytes<'a>(&'a self) -> &'a [u8];
+}
+
+impl MutBuf for Vec<u8> {
+    fn mut_bytes<'a>(&'a mut self) -> &'a mut [u8] {
+        self
+    }
+}
+
+impl <T> Buf for T where T: AsRef<[u8]> {
+    fn bytes<'a>(&'a self) -> &'a [u8] {
+        self.as_ref()
+    }
+}
+
 pub trait AsyncRead {
-    fn read(self: Self, buf: Vec<u8>, min_bytes: usize, max_bytes: usize)
-            -> Promise<(Self, Vec<u8>, usize)>;
+    fn read<T>(self: Self, buf: T, min_bytes: usize, max_bytes: usize) -> Promise<(Self, T, usize)>
+        where T: MutBuf;
 }
 
 
 pub trait AsyncWrite {
-
-    // Hm. Seems like the caller is often going to need to do an extra copy here.
-    // Can we avoid that somehow?
-    fn write(self: Self, buf: Vec<u8>) -> Promise<(Self, Vec<u8>)>;
+    fn write<T>(self: Self, buf: T) -> Promise<(Self, T)>
+        where T: Buf;
 }
 
 
@@ -131,8 +149,11 @@ impl AsyncIoStream {
         })
     }
 
-    fn read_internal(mut self, mut buf: Vec<u8>, start: usize,
-                     min_bytes: usize, max_bytes: usize) -> Promise<(Self, Vec<u8>, usize)> {
+    fn read_internal<T>(mut self,
+                        mut buf: T,
+                        start: usize,
+                        min_bytes: usize,
+                        max_bytes: usize) -> Promise<(Self, T, usize)> where T: MutBuf {
         if start >= min_bytes {
             return Promise::fulfilled((self, buf, start));
         } else {
@@ -141,15 +162,17 @@ impl AsyncIoStream {
                     event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
                 return promise.then(move |()| {
                     use mio::TryRead;
-                    let n = try!(self.stream.read_slice(&mut buf[start..])).unwrap();
+                    let n = try!(self.stream.read_slice(&mut buf.mut_bytes()[start..])).unwrap();
                     return Ok(self.read_internal(buf, start + n, min_bytes, max_bytes));
                 });
             })
         }
     }
 
-    fn write_internal(mut self, buf: Vec<u8>, cursor: usize) -> Promise<(Self, Vec<u8>)> {
-        if cursor == buf.len() {
+    fn write_internal<T>(mut self,
+                         buf: T,
+                         cursor: usize) -> Promise<(Self, T)> where T: Buf {
+        if cursor == buf.bytes().len() {
             return Promise::fulfilled((self, buf));
         } else {
             with_current_event_loop(move |event_loop| {
@@ -157,7 +180,7 @@ impl AsyncIoStream {
                     event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_writable();
                 return promise.then(move |()| {
                     use mio::TryWrite;
-                    let n = try!(self.stream.write_slice(&buf[cursor..])).unwrap();
+                    let n = try!(self.stream.write_slice(&buf.bytes()[cursor..])).unwrap();
                     return Ok(self.write_internal(buf, cursor + n));
                 });
             })
@@ -166,14 +189,15 @@ impl AsyncIoStream {
 }
 
 impl AsyncRead for AsyncIoStream {
-    fn read(self, buf: Vec<u8>,
-            min_bytes: usize, max_bytes: usize) -> Promise<(Self, Vec<u8>, usize)> {
+    fn read<T>(self, buf: T,
+               min_bytes: usize,
+               max_bytes: usize) -> Promise<(Self, T, usize)> where T: MutBuf {
         self.read_internal(buf, 0, min_bytes, max_bytes)
     }
 }
 
 impl AsyncWrite for AsyncIoStream {
-    fn write(self, buf: Vec<u8>) -> Promise<(Self, Vec<u8>)> {
+    fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Buf {
         self.write_internal(buf, 0)
     }
 }
