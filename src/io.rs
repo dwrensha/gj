@@ -71,10 +71,10 @@ impl NetworkAddress {
                 // TODO check for error.
 
                 return with_current_event_loop(move |event_loop| {
-                    event_loop.event_port.borrow_mut().reactor.reregister(
+                    try!(event_loop.event_port.borrow_mut().reactor.reregister(
                         &stream, token,
                         ::mio::Interest::writable() | ::mio::Interest::readable(),
-                        ::mio::PollOpt::edge()).unwrap();
+                        ::mio::PollOpt::edge()));
                     return Ok(AsyncIo::new(stream, token));
                 });
 
@@ -109,10 +109,10 @@ impl ConnectionReceiver {
                 let token = FdObserver::new();
 
                 return with_current_event_loop(move |event_loop| {
-                    event_loop.event_port.borrow_mut().reactor.reregister(
+                    try!(event_loop.event_port.borrow_mut().reactor.register_opt(
                         &stream, token,
                         ::mio::Interest::writable() | ::mio::Interest::readable(),
-                        ::mio::PollOpt::edge()).unwrap();
+                        ::mio::PollOpt::edge()));
                     return Ok((self, AsyncIo::new(stream, token)));
                 });
             });
