@@ -111,7 +111,6 @@ impl ConnectionReceiver {
     }
 }
 
-#[allow(dead_code)]
 pub struct AsyncIoStream {
     stream: ::mio::tcp::TcpStream,
     token: ::mio::Token,
