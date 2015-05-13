@@ -48,7 +48,7 @@ impl NetworkAddress {
     }
 
     pub fn listen(self) -> Result<ConnectionReceiver> {
-        let socket = try!(::mio::tcp::TcpSocket::v4());
+        let socket = try!(::mio::tcp::v4());
         try!(socket.set_reuseaddr(true));
         try!(socket.bind(&self.address));
         let token = FdObserver::new();
@@ -57,7 +57,7 @@ impl NetworkAddress {
     }
 
     pub fn connect(self) -> Promise<(AsyncOutputStream, AsyncInputStream)> {
-        let socket = ::mio::tcp::TcpSocket::v4().unwrap();
+        let socket = ::mio::tcp::v4().unwrap();
         let token = FdObserver::new();
         let (stream, _) = socket.connect(&self.address).unwrap();
         with_current_event_loop(move |event_loop| {
@@ -85,7 +85,7 @@ impl NetworkAddress {
 
 
 pub struct ConnectionReceiver {
-    listener: ::mio::tcp::TcpListener,
+    listener: ::mio::NonBlock<::std::net::TcpListener>,
     token: ::mio::Token,
 }
 
@@ -129,12 +129,12 @@ pub struct AsyncOutputStream {
 }
 
 struct AsyncIo {
-    stream: ::mio::tcp::TcpStream,
+    stream: ::mio::NonBlock<::std::net::TcpStream>,
     token: ::mio::Token,
 }
 
 impl AsyncIo {
-    fn new(stream: ::mio::tcp::TcpStream, token: ::mio::Token) -> (AsyncOutputStream, AsyncInputStream) {
+    fn new(stream: ::mio::NonBlock<::std::net::TcpStream>, token: ::mio::Token) -> (AsyncOutputStream, AsyncInputStream) {
         let hub = Rc::new(RefCell::new(AsyncIo { stream: stream, token: token }));
 
         (AsyncOutputStream { hub: hub.clone() }, AsyncInputStream { hub: hub } )

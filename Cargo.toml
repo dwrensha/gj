@@ -11,5 +11,5 @@ readme = "README.md"
 
 keywords = ["promise", "async", "io"]
 
-[dependencies.mio]
-git = "https://github.com/carllerche/mio"
+[dependencies]
+mio = "0.3.4"
