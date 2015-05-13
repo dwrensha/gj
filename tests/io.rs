@@ -42,3 +42,31 @@ fn hello() {
 
     assert_eq!(&buf[..], [0,1,2,3,4,5]);
 }
+
+
+#[test]
+fn echo() {
+    use gj::io::{AsyncRead, AsyncWrite};
+    gj::EventLoop::init();
+
+    let addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("127.0.0.1:10001").unwrap());
+    let receiver = addr.listen().unwrap();
+
+    let _server_promise = receiver.accept().then(move |(_, (tx, rx))| {
+        return Ok(rx.read(vec![0u8; 6], 6, 6).then(move |(_rx, mut v, _)| {
+            for x in &mut v {
+                *x += 1;
+            }
+            return Ok(tx.write(v));
+        }));
+    });
+
+    let _client_promise = addr.connect().then(move |(tx, rx)| {
+        return Ok(tx.write(vec![7,6,5,4,3,2]).then(move |(_tx, v)| {
+            return Ok(rx.read(v, 6, 6));
+        }));
+    });
+
+//    let (_, buf, _) = client_promise.wait().unwrap();
+//    assert_eq!(&buf[..], [8,7,6,5,4,3]);
+}
