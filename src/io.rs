@@ -28,7 +28,7 @@ use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
 pub trait AsyncRead {
-    fn read<T>(self: Self, buf: T, min_bytes: usize, max_bytes: usize) -> Promise<(Self, T, usize)>
+    fn read<T>(self: Self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
         where T: DerefMut<Target=[u8]>;
 }
 
@@ -145,8 +145,7 @@ impl AsyncInputStream {
     fn read_internal<T>(self,
                         mut buf: T,
                         start: usize,
-                        min_bytes: usize,
-                        max_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
+                        min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         if start >= min_bytes {
             return Promise::fulfilled((self, buf, start));
         } else {
@@ -156,7 +155,7 @@ impl AsyncInputStream {
                 return promise.then(move |()| {
                     use mio::TryRead;
                     let n = try!(self.hub.borrow_mut().stream.read_slice(&mut buf[start..])).unwrap();
-                    return Ok(self.read_internal(buf, start + n, min_bytes, max_bytes));
+                    return Ok(self.read_internal(buf, start + n, min_bytes));
                 });
             })
         }
@@ -185,9 +184,8 @@ impl AsyncOutputStream {
 
 impl AsyncRead for AsyncInputStream {
     fn read<T>(self, buf: T,
-               min_bytes: usize,
-               max_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
-        self.read_internal(buf, 0, min_bytes, max_bytes)
+               min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
+        self.read_internal(buf, 0, min_bytes)
     }
 }
 
