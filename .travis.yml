@@ -1,0 +1,8 @@
+language: rust
+rust:
+  - nightly
+  - beta
+script:
+  - cargo build
+  - cargo test
+  - cargo doc
