@@ -83,8 +83,7 @@ impl NetworkAddress {
         with_current_event_loop(move |event_loop| {
             event_loop.event_port.borrow_mut().reactor.register_opt(&stream, token,
                                                                     ::mio::Interest::writable(),
-                                                                    ::mio::PollOpt::edge()|
-                                                                    ::mio::PollOpt::oneshot()).unwrap();
+                                                                    ::mio::PollOpt::edge()).unwrap();
             let promise =
                 event_loop.event_port.borrow_mut().handler.observers[token].when_becomes_writable();
             return promise.map(move |()| {

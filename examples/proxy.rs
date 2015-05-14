@@ -25,15 +25,12 @@ use gj::io::{AsyncRead, AsyncWrite};
 fn forward(src: gj::io::AsyncInputStream,
            dst: gj::io::AsyncOutputStream,
            buf: Vec<u8>) -> gj::Promise<()> {
-    println!("forwarding");
     return src.try_read(buf, 1).then(move |(src, buf, n)| {
-        println!("got some data: {}, {:?}", n, ::std::str::from_utf8(&buf));
         if n == 0 {
             // EOF
             return Ok(gj::Promise::fulfilled(()));
         } else {
             return Ok(dst.write(gj::io::Slice::new(buf, n)).then(move |(dst, slice)| {
-                println!("wrote some data");
                 return Ok(forward(src, dst, slice.buf));
             }));
         }
@@ -41,20 +38,16 @@ fn forward(src: gj::io::AsyncInputStream,
 }
 
 fn accept_loop(receiver: gj::io::ConnectionReceiver,
-               outbound_addr: gj::io::NetworkAddress) -> gj::Promise<()> {
+               outbound_addr: gj::io::NetworkAddress,
+               mut task_set: Vec<gj::Promise<()>>) -> gj::Promise<()> {
 
     return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
         println!("handling connection");
 
-        let promise = outbound_addr.connect().then(move |(dst_tx, dst_rx)| {
-            // TODO. need to join and store these promises somewhere.
-            return Ok(forward(src_rx, dst_tx, vec![0; 1024]).then(move |()| {
-                return Ok(forward(dst_rx, src_tx, vec![0; 1024]));
-            }));
-        });
-
-        return Ok(promise.then(move |()| {
-            return Ok(accept_loop(receiver, outbound_addr));
+        return Ok(outbound_addr.connect().then(move |(dst_tx, dst_rx)| {
+            task_set.push(forward(src_rx, dst_tx, vec![0; 1024]));
+            task_set.push(forward(dst_rx, src_tx, vec![0; 1024]));
+            return Ok(accept_loop(receiver, outbound_addr, task_set));
         }));
     });
 }
@@ -68,5 +61,5 @@ pub fn main() {
     // Hard coded to a google IP
     let outbound_addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("216.58.216.164:80").unwrap());
 
-    accept_loop(receiver, outbound_addr).wait().unwrap();
+    accept_loop(receiver, outbound_addr, Vec::new()).wait().unwrap();
 }
