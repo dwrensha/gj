@@ -1,5 +1,7 @@
 # GJ - Good Job promise-based concurrency
 
+[![Build Status](https://travis-ci.org/dwrensha/gj.svg?branch=master)](https://travis-ci.org/dwrensha/gj)
+
 *** This is a work in progress! It doesn't do much yet. ***
 
 GJ is a port of the [KJ concurrency framework](https://capnproto.org/cxxrpc.html#kj-concurrency-framework)
