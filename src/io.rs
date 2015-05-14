@@ -72,8 +72,15 @@ impl NetworkAddress {
         try!(socket.set_reuseaddr(true));
         try!(socket.bind(&self.address));
         let token = FdObserver::new();
-        Ok(ConnectionReceiver { listener: try!(socket.listen(256)),
-                                token: token })
+        let listener = try!(socket.listen(256));
+
+        return with_current_event_loop(move |event_loop| {
+            try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, token,
+                                                                         ::mio::Interest::readable(),
+                                                                         ::mio::PollOpt::edge()));
+            Ok(ConnectionReceiver { listener: listener,
+                                    token: token })
+        });
     }
 
     pub fn connect(self) -> Promise<(AsyncOutputStream, AsyncInputStream)> {
@@ -119,10 +126,7 @@ impl ConnectionReceiver {
         with_current_event_loop(move |event_loop| {
             let promise =
                 event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
-            event_loop.event_port.borrow_mut().reactor.register_opt(&self.listener, self.token,
-                                                                    ::mio::Interest::readable(),
-                                                                    ::mio::PollOpt::edge() |
-                                                                    ::mio::PollOpt::oneshot()).unwrap();
+
             return promise.map(move |()| {
                 let stream = try!(self.listener.accept()).unwrap();
                 let token = FdObserver::new();
