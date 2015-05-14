@@ -22,9 +22,9 @@
 extern crate gj;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn forward(src: gj::io::AsyncInputStream,
-           dst: gj::io::AsyncOutputStream,
-           buf: Vec<u8>) -> gj::Promise<()> {
+fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
+    where R: AsyncRead, W: AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
+{
     return src.try_read(buf, 1).then(move |(src, buf, n)| {
         if n == 0 {
             // EOF
