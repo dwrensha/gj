@@ -144,54 +144,76 @@ impl AsyncIo {
 impl AsyncInputStream {
     fn read_internal<T>(self,
                         mut buf: T,
-                        start: usize,
-                        min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
-        if start >= min_bytes {
-            return Promise::fulfilled((self, buf, start));
-        } else {
-            with_current_event_loop(move |event_loop| {
-                let promise =
-                    event_loop.event_port.borrow_mut().handler.observers[self.hub.borrow().token].when_becomes_readable();
-                return promise.then(move |()| {
-                    use mio::TryRead;
-                    let n = try!(self.hub.borrow_mut().stream.read_slice(&mut buf[start..])).unwrap();
-                    return Ok(self.read_internal(buf, start + n, min_bytes));
-                });
-            })
+                        mut already_read: usize,
+                        min_bytes: usize) -> Result<Promise<(Self, T, usize)>> where T: DerefMut<Target=[u8]> {
+        use mio::TryRead;
+
+        while already_read < min_bytes {
+            let read_result = try!(self.hub.borrow_mut().stream.read_slice(&mut buf[already_read..]));
+            match read_result {
+                Some(n) => {
+                    already_read += n;
+                }
+                None => { // would block
+                    return with_current_event_loop(move |event_loop| {
+                        let promise =
+                            event_loop.event_port.borrow_mut()
+                            .handler.observers[self.hub.borrow().token].when_becomes_readable();
+                        return Ok(promise.then(move |()| {
+                            return self.read_internal(buf, already_read, min_bytes);
+                        }));
+                    });
+                }
+            }
         }
+
+        return Ok(Promise::fulfilled((self, buf, already_read)));
     }
 }
 
 impl AsyncOutputStream {
     fn write_internal<T>(self,
                          buf: T,
-                         cursor: usize) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
-        if cursor == buf.len() {
-            return Promise::fulfilled((self, buf));
-        } else {
-            with_current_event_loop(move |event_loop| {
-                let promise =
-                    event_loop.event_port.borrow_mut().handler.observers[self.hub.borrow().token].when_becomes_writable();
-                return promise.then(move |()| {
-                    use mio::TryWrite;
-                    let n = try!(self.hub.borrow_mut().stream.write_slice(&buf[cursor..])).unwrap();
-                    return Ok(self.write_internal(buf, cursor + n));
-                });
-            })
+                         mut already_written: usize) -> Result<Promise<(Self, T)>> where T: Deref<Target=[u8]> {
+        use mio::TryWrite;
+
+        while already_written < buf.len() {
+            let write_result = try!(self.hub.borrow_mut().stream.write_slice(&buf[already_written..]));
+            match write_result {
+                Some(n) => {
+                    already_written += n;
+                }
+                None => { // would block
+                    return with_current_event_loop(move |event_loop| {
+                        let promise =
+                            event_loop.event_port.borrow_mut()
+                            .handler.observers[self.hub.borrow().token].when_becomes_writable();
+                        return Ok(promise.then(move |()| {
+                            return self.write_internal(buf, already_written);
+                        }));
+                    });
+                }
+            }
         }
+
+        return Ok(Promise::fulfilled((self, buf)));
     }
 }
 
 impl AsyncRead for AsyncInputStream {
     fn read<T>(self, buf: T,
                min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
-        self.read_internal(buf, 0, min_bytes)
+        return Promise::fulfilled(()).then(move |()| {
+            return self.read_internal(buf, 0, min_bytes);
+        });
     }
 }
 
 impl AsyncWrite for AsyncOutputStream {
     fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
-        self.write_internal(buf, 0)
+        return Promise::fulfilled(()).then(move |()| {
+            return self.write_internal(buf, 0);
+        });
     }
 }
 

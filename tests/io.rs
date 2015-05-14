@@ -54,6 +54,7 @@ fn echo() {
 
     let _server_promise = receiver.accept().then(move |(_, (tx, rx))| {
         return Ok(rx.read(vec![0u8; 6], 6).then(move |(_rx, mut v, _)| {
+            assert_eq!(&v[..], [7,6,5,4,3,2]);
             for x in &mut v {
                 *x += 1;
             }
@@ -61,12 +62,12 @@ fn echo() {
         }));
     });
 
-    let _client_promise = addr.connect().then(move |(tx, rx)| {
+    let client_promise = addr.connect().then(move |(tx, rx)| {
         return Ok(tx.write(vec![7,6,5,4,3,2]).then(move |(_tx, v)| {
             return Ok(rx.read(v, 6));
         }));
     });
 
-//    let (_, buf, _) = client_promise.wait().unwrap();
-//    assert_eq!(&buf[..], [8,7,6,5,4,3]);
+    let (_, buf, _) = client_promise.wait().unwrap();
+    assert_eq!(&buf[..], [8,7,6,5,4,3]);
 }
