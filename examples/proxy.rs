@@ -1,0 +1,72 @@
+// Copyright (c) 2013-2015 Sandstorm Development Group, Inc. and contributors
+// Licensed under the MIT License:
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+extern crate gj;
+use gj::io::{AsyncRead, AsyncWrite};
+
+fn forward(src: gj::io::AsyncInputStream,
+           dst: gj::io::AsyncOutputStream,
+           buf: Vec<u8>) -> gj::Promise<()> {
+    println!("forwarding");
+    return src.try_read(buf, 1).then(move |(src, buf, n)| {
+        println!("got some data: {}, {:?}", n, ::std::str::from_utf8(&buf));
+        if n == 0 {
+            // EOF
+            return Ok(gj::Promise::fulfilled(()));
+        } else {
+            return Ok(dst.write(gj::io::Slice::new(buf, n)).then(move |(dst, slice)| {
+                println!("wrote some data");
+                return Ok(forward(src, dst, slice.buf));
+            }));
+        }
+    });
+}
+
+fn accept_loop(receiver: gj::io::ConnectionReceiver,
+               outbound_addr: gj::io::NetworkAddress) -> gj::Promise<()> {
+
+    return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
+        println!("handling connection");
+
+        let promise = outbound_addr.connect().then(move |(dst_tx, dst_rx)| {
+            // TODO. need to join and store these promises somewhere.
+            return Ok(forward(src_rx, dst_tx, vec![0; 1024]).then(move |()| {
+                return Ok(forward(dst_rx, src_tx, vec![0; 1024]));
+            }));
+        });
+
+        return Ok(promise.then(move |()| {
+            return Ok(accept_loop(receiver, outbound_addr));
+        }));
+    });
+}
+
+pub fn main() {
+    gj::EventLoop::init();
+
+    let addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("127.0.0.1:9999").unwrap());
+    let receiver = addr.listen().unwrap();
+
+    // Hard coded to a google IP
+    let outbound_addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("216.58.216.164:80").unwrap());
+
+    accept_loop(receiver, outbound_addr).wait().unwrap();
+}

@@ -30,11 +30,31 @@ use private::{with_current_event_loop};
 pub trait AsyncRead {
     fn read<T>(self: Self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
         where T: DerefMut<Target=[u8]>;
+    fn try_read<T>(self: Self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
+        where T: DerefMut<Target=[u8]>;
 }
 
 pub trait AsyncWrite {
     fn write<T>(self: Self, buf: T) -> Promise<(Self, T)>
         where T: Deref<Target=[u8]>;
+}
+
+pub struct Slice<T> where T: Deref<Target=[u8]> {
+    pub buf: T,
+    pub end: usize,
+}
+
+impl <T> Slice<T> where T: Deref<Target=[u8]> {
+    pub fn new(buf: T, end: usize) -> Slice<T> {
+        Slice { buf: buf, end: end }
+    }
+}
+
+impl <T> Deref for Slice<T> where T: Deref<Target=[u8]> {
+    type Target=[u8];
+    fn deref<'a>(&'a self) -> &'a [u8] {
+        &self.buf[0..self.end]
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -142,15 +162,19 @@ impl AsyncIo {
 }
 
 impl AsyncInputStream {
-    fn read_internal<T>(self,
-                        mut buf: T,
-                        mut already_read: usize,
-                        min_bytes: usize) -> Result<Promise<(Self, T, usize)>> where T: DerefMut<Target=[u8]> {
+    fn try_read_internal<T>(self,
+                            mut buf: T,
+                            mut already_read: usize,
+                            min_bytes: usize) -> Result<Promise<(Self, T, usize)>> where T: DerefMut<Target=[u8]> {
         use mio::TryRead;
 
         while already_read < min_bytes {
             let read_result = try!(self.hub.borrow_mut().stream.read_slice(&mut buf[already_read..]));
             match read_result {
+                Some(0) => {
+                    // EOF
+                    return Ok(Promise::fulfilled((self, buf, already_read)));
+                }
                 Some(n) => {
                     already_read += n;
                 }
@@ -160,7 +184,7 @@ impl AsyncInputStream {
                             event_loop.event_port.borrow_mut()
                             .handler.observers[self.hub.borrow().token].when_becomes_readable();
                         return Ok(promise.then(move |()| {
-                            return self.read_internal(buf, already_read, min_bytes);
+                            return self.try_read_internal(buf, already_read, min_bytes);
                         }));
                     });
                 }
@@ -203,8 +227,19 @@ impl AsyncOutputStream {
 impl AsyncRead for AsyncInputStream {
     fn read<T>(self, buf: T,
                min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
+        return self.try_read(buf, min_bytes).map(move |(s, buf, n)| {
+            if n < min_bytes {
+                return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other, "Premature EOF")))
+            } else {
+                return Ok((s, buf, n));
+            }
+        });
+    }
+
+    fn try_read<T>(self, buf: T,
+               min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
-            return self.read_internal(buf, 0, min_bytes);
+            return self.try_read_internal(buf, 0, min_bytes);
         });
     }
 }
