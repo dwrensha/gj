@@ -26,7 +26,7 @@ fn hello() {
     use gj::io::{AsyncRead, AsyncWrite};
     gj::EventLoop::init();
 
-    let addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("127.0.0.1:10000").unwrap());
+    let addr = gj::io::NetworkAddress::new("127.0.0.1:10000").unwrap();
 
     let receiver = addr.listen().unwrap();
 
@@ -49,7 +49,7 @@ fn echo() {
     use gj::io::{AsyncRead, AsyncWrite};
     gj::EventLoop::init();
 
-    let addr = gj::io::NetworkAddress::new(::std::str::FromStr::from_str("127.0.0.1:10001").unwrap());
+    let addr = gj::io::NetworkAddress::new("127.0.0.1:10001").unwrap();
     let receiver = addr.listen().unwrap();
 
     let _server_promise = receiver.accept().then(move |(_, (tx, rx))| {

@@ -83,8 +83,11 @@ pub struct NetworkAddress {
 }
 
 impl NetworkAddress {
-    pub fn new(address: ::std::net::SocketAddr) -> NetworkAddress {
-        NetworkAddress { address: address }
+    pub fn new<T : ::std::net::ToSocketAddrs>(address: T) -> Result<NetworkAddress> {
+        match try!(address.to_socket_addrs()).next() {
+            Some(addr) => return Ok(NetworkAddress { address: addr }),
+            None => unimplemented!(),
+        }
     }
 
     pub fn listen(self) -> Result<ConnectionReceiver> {
