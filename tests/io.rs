@@ -24,7 +24,7 @@ extern crate gj;
 #[test]
 fn hello() {
     use gj::io::{AsyncRead, AsyncWrite};
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let addr = gj::io::NetworkAddress::new("127.0.0.1:10000").unwrap();
 
@@ -48,7 +48,7 @@ fn hello() {
 #[test]
 fn echo() {
     use gj::io::{AsyncRead, AsyncWrite};
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let addr = gj::io::NetworkAddress::new("127.0.0.1:10001").unwrap();
         let receiver = addr.listen().unwrap();

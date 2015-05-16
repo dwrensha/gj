@@ -129,7 +129,7 @@ pub struct EventLoop {
 
 
 impl EventLoop {
-    pub fn init<F>(f: F) where F: FnOnce(&WaitScope) {
+    pub fn top_level<F>(f: F) where F: FnOnce(&WaitScope) {
         EVENT_LOOP.with(|maybe_event_loop| {
             let event_loop = EventLoop {
                 event_port: RefCell::new(io::MioEventPort::new().unwrap()),
@@ -142,7 +142,7 @@ impl EventLoop {
             assert!(maybe_event_loop.borrow().is_none());
             *maybe_event_loop.borrow_mut() = Some(event_loop);
         });
-        let wait_scope = WaitScope(::std::marker::PhantomData);
+        let wait_scope = WaitScope(::std::marker::PhantomData );
         f(&wait_scope);
     }
 

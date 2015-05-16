@@ -25,7 +25,7 @@ extern crate gj;
 fn eval_void() {
     use std::rc::Rc;
     use std::cell::Cell;
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
         let done = Rc::new(Cell::new(false));
         let done1 = done.clone();
         let promise = gj::Promise::fulfilled(()).map(move |()| {
@@ -40,7 +40,7 @@ fn eval_void() {
 
 #[test]
 fn eval_int() {
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
         let promise = gj::Promise::fulfilled(19u64).map(|x| {
             assert_eq!(x, 19);
             return Ok(x + 2);
@@ -53,7 +53,7 @@ fn eval_int() {
 
 #[test]
 fn fulfiller() {
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
         let (promise, fulfiller) = gj::new_promise_and_fulfiller::<u32>();
         let p1 = promise.map(|x| {
             assert_eq!(x, 10);
@@ -68,7 +68,7 @@ fn fulfiller() {
 
 #[test]
 fn chain() {
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let promise: gj::Promise<i32> = gj::Promise::fulfilled(()).map(|()| { return Ok(123); });
         let promise2: gj::Promise<i32> = gj::Promise::fulfilled(()).map(|()| { return Ok(321); });
@@ -86,7 +86,7 @@ fn chain() {
 
 #[test]
 fn chain_error() {
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let promise = gj::Promise::fulfilled(()).map(|()| { return Ok("123"); });
         let promise2 = gj::Promise::fulfilled(()).map(|()| { return Ok("XXX321"); });
@@ -105,7 +105,7 @@ fn chain_error() {
 
 #[test]
 fn deep_chain2() {
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let mut promise = gj::Promise::fulfilled(4u32);
 
@@ -123,7 +123,7 @@ fn deep_chain2() {
 
 #[test]
 fn separate_fulfiller_chained() {
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let (promise, fulfiller) = gj::new_promise_and_fulfiller::<gj::Promise<i32>>();
         let (inner_promise, inner_fulfiller) = gj::new_promise_and_fulfiller::<i32>();
@@ -142,7 +142,7 @@ fn ordering() {
     use std::rc::Rc;
     use std::cell::{Cell, RefCell};
 
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let counter = Rc::new(Cell::new(0u32));
         let (counter0, counter1, counter2, counter3, counter4, counter5, counter6) =

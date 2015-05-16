@@ -53,7 +53,7 @@ fn accept_loop(receiver: gj::io::ConnectionReceiver,
 }
 
 pub fn main() {
-    gj::EventLoop::init(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let addr = gj::io::NetworkAddress::new("127.0.0.1:9999").unwrap();
         let receiver = addr.listen().unwrap();
