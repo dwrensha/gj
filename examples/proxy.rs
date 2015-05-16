@@ -53,13 +53,14 @@ fn accept_loop(receiver: gj::io::ConnectionReceiver,
 }
 
 pub fn main() {
-    gj::EventLoop::init();
+    gj::EventLoop::init(|wait_scope| {
 
-    let addr = gj::io::NetworkAddress::new("127.0.0.1:9999").unwrap();
-    let receiver = addr.listen().unwrap();
+        let addr = gj::io::NetworkAddress::new("127.0.0.1:9999").unwrap();
+        let receiver = addr.listen().unwrap();
 
-    // Hard coded to a google IP
-    let outbound_addr = gj::io::NetworkAddress::new("216.58.216.164:80").unwrap();
+        // Hard coded to a google IP
+        let outbound_addr = gj::io::NetworkAddress::new("216.58.216.164:80").unwrap();
 
-    accept_loop(receiver, outbound_addr, Vec::new()).wait().unwrap();
+        accept_loop(receiver, outbound_addr, Vec::new()).wait(wait_scope).unwrap();
+    });
 }

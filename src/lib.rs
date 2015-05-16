@@ -66,7 +66,7 @@ impl <T> Promise <T> where T: 'static {
             Promise { node: Box::new(promise_node::Transform::new(self.node, func, error_handler)) }
         }
 
-    pub fn wait(mut self) -> Result<T> {
+    pub fn wait(mut self, _wait_scope: &WaitScope) -> Result<T> {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
@@ -93,6 +93,8 @@ impl <T> Promise <T> where T: 'static {
         return Promise { node: Box::new(promise_node::Immediate::new(Err(error))) };
     }
 }
+
+pub struct WaitScope(());
 
 /// Interface between an `EventLoop` and events originating from outside of the loop's thread.
 pub trait EventPort {
@@ -124,8 +126,10 @@ pub struct EventLoop {
     depth_first_events: RefCell<::std::collections::VecDeque<Box<Event>>>,
 }
 
+
+
 impl EventLoop {
-    pub fn init() {
+    pub fn init<F>(f: F) where F: FnOnce(&WaitScope) {
         EVENT_LOOP.with(|maybe_event_loop| {
             let event_loop = EventLoop {
                 event_port: RefCell::new(io::MioEventPort::new().unwrap()),
@@ -134,8 +138,12 @@ impl EventLoop {
                 events: RefCell::new(::std::collections::VecDeque::new()),
                 depth_first_events: RefCell::new(::std::collections::VecDeque::new()) };
 
+
+            assert!(maybe_event_loop.borrow().is_none());
             *maybe_event_loop.borrow_mut() = Some(event_loop);
         });
+        let wait_scope = WaitScope(());
+        f(&wait_scope);
     }
 
     fn arm_depth_first(&self, event: Box<Event>) {

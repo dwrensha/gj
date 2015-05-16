@@ -24,50 +24,52 @@ extern crate gj;
 #[test]
 fn hello() {
     use gj::io::{AsyncRead, AsyncWrite};
-    gj::EventLoop::init();
+    gj::EventLoop::init(|wait_scope| {
 
-    let addr = gj::io::NetworkAddress::new("127.0.0.1:10000").unwrap();
+        let addr = gj::io::NetworkAddress::new("127.0.0.1:10000").unwrap();
 
-    let receiver = addr.listen().unwrap();
+        let receiver = addr.listen().unwrap();
 
-    let _write_promise = receiver.accept().then(move |(_, (tx, _rx))| {
-        return Ok(tx.write(vec![0,1,2,3,4,5]));
+        let _write_promise = receiver.accept().then(move |(_, (tx, _rx))| {
+            return Ok(tx.write(vec![0,1,2,3,4,5]));
+        });
+
+        let read_promise = addr.connect().then(move |(_tx, rx)| {
+            return Ok(rx.read(vec![0u8; 6], 6));
+        });
+
+        let (_, buf, _) = read_promise.wait(wait_scope).unwrap();
+
+        assert_eq!(&buf[..], [0,1,2,3,4,5]);
     });
-
-    let read_promise = addr.connect().then(move |(_tx, rx)| {
-        return Ok(rx.read(vec![0u8; 6], 6));
-    });
-
-    let (_, buf, _) = read_promise.wait().unwrap();
-
-    assert_eq!(&buf[..], [0,1,2,3,4,5]);
 }
 
 
 #[test]
 fn echo() {
     use gj::io::{AsyncRead, AsyncWrite};
-    gj::EventLoop::init();
+    gj::EventLoop::init(|wait_scope| {
 
-    let addr = gj::io::NetworkAddress::new("127.0.0.1:10001").unwrap();
-    let receiver = addr.listen().unwrap();
+        let addr = gj::io::NetworkAddress::new("127.0.0.1:10001").unwrap();
+        let receiver = addr.listen().unwrap();
 
-    let _server_promise = receiver.accept().then(move |(_, (tx, rx))| {
-        return Ok(rx.read(vec![0u8; 6], 6).then(move |(_rx, mut v, _)| {
-            assert_eq!(&v[..], [7,6,5,4,3,2]);
-            for x in &mut v {
-                *x += 1;
-            }
-            return Ok(tx.write(v));
-        }));
+        let _server_promise = receiver.accept().then(move |(_, (tx, rx))| {
+            return Ok(rx.read(vec![0u8; 6], 6).then(move |(_rx, mut v, _)| {
+                assert_eq!(&v[..], [7,6,5,4,3,2]);
+                for x in &mut v {
+                    *x += 1;
+                }
+                return Ok(tx.write(v));
+            }));
+        });
+
+        let client_promise = addr.connect().then(move |(tx, rx)| {
+            return Ok(tx.write(vec![7,6,5,4,3,2]).then(move |(_tx, v)| {
+                return Ok(rx.read(v, 6));
+            }));
+        });
+
+        let (_, buf, _) = client_promise.wait(wait_scope).unwrap();
+        assert_eq!(&buf[..], [8,7,6,5,4,3]);
     });
-
-    let client_promise = addr.connect().then(move |(tx, rx)| {
-        return Ok(tx.write(vec![7,6,5,4,3,2]).then(move |(_tx, v)| {
-            return Ok(rx.read(v, 6));
-        }));
-    });
-
-    let (_, buf, _) = client_promise.wait().unwrap();
-    assert_eq!(&buf[..], [8,7,6,5,4,3]);
 }
