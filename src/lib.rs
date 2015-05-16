@@ -94,7 +94,7 @@ impl <T> Promise <T> where T: 'static {
     }
 }
 
-pub struct WaitScope(());
+pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
 /// Interface between an `EventLoop` and events originating from outside of the loop's thread.
 pub trait EventPort {
@@ -142,7 +142,7 @@ impl EventLoop {
             assert!(maybe_event_loop.borrow().is_none());
             *maybe_event_loop.borrow_mut() = Some(event_loop);
         });
-        let wait_scope = WaitScope(());
+        let wait_scope = WaitScope(::std::marker::PhantomData);
         f(&wait_scope);
     }
 
