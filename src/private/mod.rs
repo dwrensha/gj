@@ -20,7 +20,8 @@
 // THE SOFTWARE.
 
 use std::cell::RefCell;
-use {Error, Result, PromiseFulfiller, EventLoop};
+use std::rc::Rc;
+use {Error, Result, PromiseFulfiller, EventLoop, ErrorHandler};
 
 pub mod promise_node;
 
@@ -166,7 +167,7 @@ impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfill
     }
 }
 
-impl <T> PromiseFulfiller<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
+impl <T> PromiseFulfiller<T> for Rc<RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
     fn fulfill(self: Box<Self>, value: T) {
         self.borrow_mut().fulfill(value);
     }
@@ -176,13 +177,42 @@ impl <T> PromiseFulfiller<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFu
     }
 }
 
-/*
-trait ErrorHandler {
-    fn task_failed(error: Error);
-}
-
-struct TaskSetImpl {
+pub struct TaskSetImpl {
     error_handler: Box<ErrorHandler>,
 }
 
-*/
+impl TaskSetImpl {
+    pub fn new(error_handler: Box<ErrorHandler>) -> TaskSetImpl {
+        TaskSetImpl { error_handler: error_handler }
+    }
+
+      pub fn add(&mut self, _promise: Box<PromiseNode<()>>) {
+        unimplemented!()
+    }
+}
+
+#[allow(dead_code)]
+pub struct Task {
+    task_set: Rc<RefCell<TaskSetImpl>>,
+    node: Option<Box<PromiseNode<()>>>,
+}
+
+impl Event for Task {
+    fn fire(&mut self) {
+        let maybe_node = ::std::mem::replace(&mut self.node, None);
+        match maybe_node {
+            None => {
+                panic!()
+            }
+            Some(node) => {
+                match node.get() {
+                    Ok(()) => {}
+                    Err(e) => {
+                        self.task_set.borrow_mut().error_handler.task_failed(e);
+                    }
+                }
+            }
+        }
+    }
+}
+

@@ -22,6 +22,7 @@
 extern crate mio;
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
 
@@ -66,6 +67,10 @@ impl <T> Promise <T> where T: 'static {
             Promise { node: Box::new(promise_node::Transform::new(self.node, func, error_handler)) }
         }
 
+    /// Runs the event loop until the promise is fulfilled.
+    ///
+    /// The `WaitScope` argument ensures that `wait()` can only be called the top level of a program.
+    /// Waiting within event callbacks is disallowed.
     pub fn wait(mut self, _wait_scope: &WaitScope) -> Result<T> {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
@@ -197,3 +202,25 @@ pub fn new_promise_and_fulfiller<T>() -> (Promise<T>, Box<PromiseFulfiller<T>>) 
     let result_promise : Promise<T> = Promise { node: Box::new(result.clone())};
     (result_promise, Box::new(result))
 }
+
+
+/// Holds a collection of Promise<()>s and ensures that each executes to comleteion.
+/// Destroying a TaskSet automatically cancels all of its unfinished promises.
+pub struct TaskSet {
+    task_set_impl: Rc<RefCell<private::TaskSetImpl>>,
+}
+
+impl TaskSet {
+    pub fn new(error_handler: Box<ErrorHandler>) -> TaskSet {
+        TaskSet { task_set_impl : Rc::new(RefCell::new(private::TaskSetImpl::new(error_handler))) }
+    }
+
+    pub fn add(&mut self, promise: Promise<()>) {
+        self.task_set_impl.borrow_mut().add(promise.node);
+    }
+}
+
+pub trait ErrorHandler {
+    fn task_failed(&mut self, error: Error);
+}
+
