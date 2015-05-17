@@ -22,8 +22,8 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::{DerefMut, Deref};
-use mio::util::Slab;
 use mio::Socket;
+use handle_table::{HandleTable, Handle};
 use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
@@ -94,28 +94,29 @@ impl NetworkAddress {
         let socket = try!(::mio::tcp::TcpSocket::v4());
         try!(socket.set_reuseaddr(true));
         try!(socket.bind(&self.address));
-        let token = FdObserver::new();
+        let handle = FdObserver::new();
         let listener = try!(socket.listen(256));
 
         return with_current_event_loop(move |event_loop| {
-            try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, token,
+            try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::Interest::readable(),
                                                                          ::mio::PollOpt::edge()));
             Ok(ConnectionReceiver { listener: listener,
-                                    token: token })
+                                    handle: handle })
         });
     }
 
     pub fn connect(self) -> Promise<(AsyncOutputStream, AsyncInputStream)> {
         let socket = ::mio::tcp::TcpSocket::v4().unwrap();
-        let token = FdObserver::new();
+        let handle = FdObserver::new();
+        let token = ::mio::Token(handle.val);
         let (stream, _) = socket.connect(&self.address).unwrap();
         with_current_event_loop(move |event_loop| {
             event_loop.event_port.borrow_mut().reactor.register_opt(&stream, token,
                                                                     ::mio::Interest::writable(),
                                                                     ::mio::PollOpt::edge()).unwrap();
             let promise =
-                event_loop.event_port.borrow_mut().handler.observers[token].when_becomes_writable();
+                event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
             return promise.map(move |()| {
                 // TODO check for error.
 
@@ -124,7 +125,7 @@ impl NetworkAddress {
                         &stream, token,
                         ::mio::Interest::writable() | ::mio::Interest::readable(),
                         ::mio::PollOpt::edge()));
-                    return Ok(AsyncIo::new(stream, token));
+                    return Ok(AsyncIo::new(stream, handle));
                 });
 
             });
@@ -135,7 +136,7 @@ impl NetworkAddress {
 
 pub struct ConnectionReceiver {
     listener: ::mio::tcp::TcpListener,
-    token: ::mio::Token,
+    handle: Handle,
 }
 
 impl Drop for ConnectionReceiver {
@@ -148,18 +149,18 @@ impl ConnectionReceiver {
     pub fn accept(self) -> Promise<(ConnectionReceiver, (AsyncOutputStream, AsyncInputStream))> {
         with_current_event_loop(move |event_loop| {
             let promise =
-                event_loop.event_port.borrow_mut().handler.observers[self.token].when_becomes_readable();
+                event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
 
             return promise.map(move |()| {
                 let stream = try!(self.listener.accept()).unwrap();
-                let token = FdObserver::new();
+                let handle = FdObserver::new();
 
                 return with_current_event_loop(move |event_loop| {
                     try!(event_loop.event_port.borrow_mut().reactor.register_opt(
-                        &stream, token,
+                        &stream, ::mio::Token(handle.val),
                         ::mio::Interest::writable() | ::mio::Interest::readable(),
                         ::mio::PollOpt::edge()));
-                    return Ok((self, AsyncIo::new(stream, token)));
+                    return Ok((self, AsyncIo::new(stream, handle)));
                 });
             });
         })
@@ -176,12 +177,12 @@ pub struct AsyncOutputStream {
 
 struct AsyncIo {
     stream: ::mio::tcp::TcpStream,
-    token: ::mio::Token,
+    handle: Handle,
 }
 
 impl AsyncIo {
-    fn new(stream: ::mio::tcp::TcpStream, token: ::mio::Token) -> (AsyncOutputStream, AsyncInputStream) {
-        let hub = Rc::new(RefCell::new(AsyncIo { stream: stream, token: token }));
+    fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> (AsyncOutputStream, AsyncInputStream) {
+        let hub = Rc::new(RefCell::new(AsyncIo { stream: stream, handle: handle }));
 
         (AsyncOutputStream { hub: hub.clone() }, AsyncInputStream { hub: hub } )
     }
@@ -208,7 +209,7 @@ impl AsyncInputStream {
                     return with_current_event_loop(move |event_loop| {
                         let promise =
                             event_loop.event_port.borrow_mut()
-                            .handler.observers[self.hub.borrow().token].when_becomes_readable();
+                            .handler.observers[self.hub.borrow().handle].when_becomes_readable();
                         return Ok(promise.then(move |()| {
                             return self.try_read_internal(buf, already_read, min_bytes);
                         }));
@@ -237,7 +238,7 @@ impl AsyncOutputStream {
                     return with_current_event_loop(move |event_loop| {
                         let promise =
                             event_loop.event_port.borrow_mut()
-                            .handler.observers[self.hub.borrow().token].when_becomes_writable();
+                            .handler.observers[self.hub.borrow().handle].when_becomes_writable();
                         return Ok(promise.then(move |()| {
                             return self.write_internal(buf, already_written);
                         }));
@@ -274,16 +275,12 @@ pub struct FdObserver {
 }
 
 impl FdObserver {
-    pub fn new() -> ::mio::Token {
+    pub fn new() -> Handle {
         with_current_event_loop(move |event_loop| {
 
             let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
             let event_port = &mut *event_loop.event_port.borrow_mut();
-            let token = match event_port.handler.observers.insert(observer) {
-                Ok(tok) => tok,
-                Err(_obs) => panic!("could not insert observer."),
-            };
-            return token;
+            return event_port.handler.observers.push(observer);
         })
     }
 
@@ -306,13 +303,13 @@ pub struct MioEventPort {
 }
 
 pub struct Handler {
-    observers: Slab<FdObserver>,
+    observers: HandleTable<FdObserver>,
 }
 
 impl MioEventPort {
     pub fn new() -> Result<MioEventPort> {
         Ok(MioEventPort {
-            handler: Handler { observers: Slab::new(100) },
+            handler: Handler { observers: HandleTable::new() },
             reactor: try!(::mio::EventLoop::new()),
         })
     }
@@ -323,7 +320,7 @@ impl ::mio::Handler for Handler {
     type Message = ();
     fn readable(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
                 token: ::mio::Token, _hint: ::mio::ReadHint) {
-        match ::std::mem::replace(&mut self.observers[token].read_fulfiller, None) {
+        match ::std::mem::replace(&mut self.observers[Handle {val: token.0}].read_fulfiller, None) {
             Some(fulfiller) => {
                 fulfiller.fulfill(())
             }
@@ -333,7 +330,7 @@ impl ::mio::Handler for Handler {
         }
     }
     fn writable(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, token: ::mio::Token) {
-        match ::std::mem::replace(&mut self.observers[token].write_fulfiller, None) {
+        match ::std::mem::replace(&mut self.observers[Handle { val: token.0}].write_fulfiller, None) {
             Some(fulfiller) => fulfiller.fulfill(()),
             None => (),
         }

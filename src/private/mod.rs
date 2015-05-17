@@ -186,10 +186,25 @@ impl TaskSetImpl {
         TaskSetImpl { error_handler: error_handler }
     }
 
-      pub fn add(&mut self, _promise: Box<PromiseNode<()>>) {
-        unimplemented!()
+      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<()>>) {
+          let task = Task { task_set: task_set, node: None };
+          node.on_ready(Box::new(task));
+          unimplemented!()
     }
 }
+
+/*
+ An event has two parts. One is owned by the promise that is waiting on it.
+
+ If this half is dropped, the event should be cancelled, i.e. removed from the queue.
+
+ The other half is owned by the queue. This is the part that needs to be able to call fire().
+
+
+ Need a name for my growable slab datastructure.
+ GrowSlab.
+
+*/
 
 #[allow(dead_code)]
 pub struct Task {

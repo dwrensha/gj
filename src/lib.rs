@@ -29,6 +29,7 @@ use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
 pub mod io;
 
 mod private;
+mod handle_table;
 
 pub type Error = Box<::std::error::Error>;
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -159,7 +160,7 @@ impl EventLoop {
         self.events.borrow_mut().push_back(event);
     }
 
-    /// Run the event loop for `max_turn_count` turns or until there is nothing left to be done,
+    /// Runs the event loop for `max_turn_count` turns or until there is nothing left to be done,
     /// whichever comes first. This never calls the `EventPort`'s `sleep()` or `poll()`. It will
     /// call the `EventPort`'s `set_runnable(false)` if the queue becomes empty.
     pub fn run(&mut self, max_turn_count : u32) {
@@ -216,7 +217,7 @@ impl TaskSet {
     }
 
     pub fn add(&mut self, promise: Promise<()>) {
-        self.task_set_impl.borrow_mut().add(promise.node);
+        private::TaskSetImpl::add(self.task_set_impl.clone(), promise.node);
     }
 }
 
