@@ -40,7 +40,7 @@ pub fn with_current_event_loop<F, R>(f: F) -> R
 
 pub trait PromiseNode<T> {
     /// Arms the given event when the promised value is ready.
-    fn on_ready(&mut self, event: Box<Event>);
+    fn on_ready(&mut self, event: EventHandle);
 
     fn set_self_pointer(&mut self) {}
     fn get(self: Box<Self>) -> Result<T>;
@@ -51,43 +51,19 @@ pub trait Event {
 
 }
 
-#[derive(Copy, Clone)]
-pub struct EventHandle(Handle);
+#[derive(PartialEq, Eq, Copy, Clone)]
+pub struct EventHandle(pub Handle);
 
-pub struct EventNode {
-    event: Box<Event>,
-    next: Option<EventHandle>,
-    prev: Option<EventHandle>
-}
-
-pub struct EventDropper {
-    event_handle: EventHandle,
-}
-
-impl Drop for EventDropper {
-    fn drop(&mut self) {
-        with_current_event_loop(|event_loop| {
-            let mut events = event_loop._events.borrow_mut();
-            let event_node = events.remove(self.event_handle.0).unwrap();
-
-            // event_node.next.prev = event_node.prev
-            match event_node.next {
-                Some(e) => {
-                    events[e.0].prev = event_node.prev;
-                }
-                None => {}
-            }
-            // event_node.prev.next = event_node.next
-
-            match event_node.prev {
-                Some(e) => {
-                    events[e.0].next = event_node.next;
-                }
-                None => {}
-            }
+impl EventHandle {
+    pub fn new(event: Box<Event>) -> (EventHandle, EventDropper) {
+        return with_current_event_loop(|event_loop| {
+            let node = EventNode { event: Some(event), next: None, prev: None };
+            let handle = EventHandle(event_loop.events.borrow_mut().push(node));
+            return (handle, EventDropper { event_handle: handle });
         });
     }
 }
+
 
 /*
 impl EventHandle {
@@ -97,6 +73,50 @@ impl EventHandle {
         });
     }
 } */
+
+
+
+pub struct EventNode {
+    pub event: Option<Box<Event>>,
+    pub next: Option<EventHandle>,
+    pub prev: Option<EventHandle>
+}
+
+pub struct EventDropper {
+    event_handle: EventHandle,
+}
+
+impl Drop for EventDropper {
+    fn drop(&mut self) {
+        with_current_event_loop(|event_loop| {
+            let mut events = event_loop.events.borrow_mut();
+            let maybe_event_node = events.remove(self.event_handle.0);
+
+            match maybe_event_node {
+                None => {}
+                Some(event_node) => {
+
+                    // event_node.next.prev = event_node.prev
+                    match event_node.next {
+                        Some(e) => {
+                            events[e.0].prev = event_node.prev;
+                        }
+                        None => {}
+                    }
+                    // event_node.prev.next = event_node.next
+
+                    match event_node.prev {
+                        Some(e) => {
+                            events[e.0].next = event_node.next;
+                        }
+                        None => {}
+                    }
+                }
+            }
+        });
+        // TODO what if it was the tail?
+    }
+}
 
 pub struct BoolEvent {
     fired: ::std::rc::Rc<::std::cell::Cell<bool>>,
@@ -117,7 +137,7 @@ impl Event for BoolEvent {
 pub enum OnReadyEvent {
     Empty,
     AlreadyReady,
-    Full(Box<Event>),
+    Full(EventHandle),
 }
 
 impl OnReadyEvent {
@@ -135,7 +155,7 @@ impl OnReadyEvent {
         }
     }
 
-    fn init(&mut self, new_event: Box<Event>) {
+    fn init(&mut self, new_event: EventHandle) {
         with_current_event_loop(|event_loop| {
             if self.is_already_ready() {
                 event_loop.arm_breadth_first(new_event);
@@ -197,7 +217,7 @@ pub struct WrapperPromiseNode<T> where T: 'static {
 */
 
 impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
-    fn on_ready(&mut self, event: Box<Event>) {
+    fn on_ready(&mut self, event: EventHandle) {
         self.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<T> {
@@ -229,7 +249,8 @@ impl TaskSetImpl {
 
       pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<()>>) {
           let task = Task { task_set: task_set, node: None };
-          node.on_ready(Box::new(task));
+          let (handle, drooper) = EventHandle::new(Box::new(task));
+          node.on_ready(handle);
           unimplemented!()
     }
 }
