@@ -21,6 +21,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use handle_table::{Handle};
 use {Error, Result, PromiseFulfiller, EventLoop, ErrorHandler};
 
 pub mod promise_node;
@@ -48,14 +49,54 @@ pub trait PromiseNode<T> {
 pub trait Event {
     fn fire(&mut self);
 
-
-    /* TODO why doesn't this work? Something about Sized?
-    fn arm_breadth_first(self: Box<Self>) {
-        with_current_event_loop(|event_loop| {
-     //       event_loop.borrow_mut().arm_breadth_first(self);
-        });
-    } */
 }
+
+#[derive(Copy, Clone)]
+pub struct EventHandle(Handle);
+
+pub struct EventNode {
+    event: Box<Event>,
+    next: Option<EventHandle>,
+    prev: Option<EventHandle>
+}
+
+pub struct EventDropper {
+    event_handle: EventHandle,
+}
+
+impl Drop for EventDropper {
+    fn drop(&mut self) {
+        with_current_event_loop(|event_loop| {
+            let mut events = event_loop._events.borrow_mut();
+            let event_node = events.remove(self.event_handle.0).unwrap();
+
+            // event_node.next.prev = event_node.prev
+            match event_node.next {
+                Some(e) => {
+                    events[e.0].prev = event_node.prev;
+                }
+                None => {}
+            }
+            // event_node.prev.next = event_node.next
+
+            match event_node.prev {
+                Some(e) => {
+                    events[e.0].next = event_node.next;
+                }
+                None => {}
+            }
+        });
+    }
+}
+
+/*
+impl EventHandle {
+    pub fn arm_breadth_first(self: Box<Self>) {
+        with_current_event_loop(|event_loop| {
+            event_loop.borrow_mut().arm_breadth_first(self);
+        });
+    }
+} */
 
 pub struct BoolEvent {
     fired: ::std::rc::Rc<::std::cell::Cell<bool>>,
@@ -200,9 +241,6 @@ impl TaskSetImpl {
 
  The other half is owned by the queue. This is the part that needs to be able to call fire().
 
-
- Need a name for my growable slab datastructure.
- GrowSlab.
 
 */
 

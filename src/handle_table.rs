@@ -53,14 +53,18 @@ impl <T> HandleTable<T> {
                       free_ids : BinaryHeap::new() }
     }
 
-    pub fn _erase(&mut self, handle: Handle) {
-        self.slots[handle.val] = None;
-        self.free_ids.push(handle);
+    pub fn remove(&mut self, handle: Handle) -> Option<T> {
+        let result = ::std::mem::replace(&mut self.slots[handle.val], None);
+        if !result.is_none() {
+            self.free_ids.push(handle);
+        }
+        return result;
     }
 
     pub fn push(&mut self, val : T) -> Handle {
         match self.free_ids.pop() {
             Some(Handle { val: id }) => {
+                assert!(self.slots[id as usize].is_none());
                 self.slots[id as usize] = Some(val);
                 Handle { val: id }
             }

@@ -21,7 +21,7 @@
 
 extern crate mio;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
@@ -130,6 +130,10 @@ pub struct EventLoop {
     _last_runnable_state: bool,
     events: RefCell<::std::collections::VecDeque<Box<Event>>>,
     depth_first_events: RefCell<::std::collections::VecDeque<Box<Event>>>,
+    _events: RefCell<handle_table::HandleTable<private::EventNode>>,
+    _head: Cell<Option<private::EventHandle>>,
+    _tail: Cell<Option<private::EventHandle>>,
+    _depth_first_insertion_point: Cell<Option<private::EventHandle>>,
 }
 
 
@@ -142,7 +146,12 @@ impl EventLoop {
                 running: false,
                 _last_runnable_state: false,
                 events: RefCell::new(::std::collections::VecDeque::new()),
-                depth_first_events: RefCell::new(::std::collections::VecDeque::new()) };
+                depth_first_events: RefCell::new(::std::collections::VecDeque::new()),
+                _events: RefCell::new(handle_table::HandleTable::<private::EventNode>::new()),
+                _head: Cell::new(None),
+                _tail: Cell::new(None),
+                _depth_first_insertion_point: Cell::new(None),
+            };
 
 
             assert!(maybe_event_loop.borrow().is_none());
