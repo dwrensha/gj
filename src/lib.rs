@@ -171,6 +171,7 @@ impl EventLoop {
                 self.events.borrow_mut()[event_handle.0].next = Some(next_handle);
             }
             None => {
+                self.tail.set(event_handle);
             }
         }
 
