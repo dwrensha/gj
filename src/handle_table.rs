@@ -82,7 +82,7 @@ impl<T> Index<Handle> for HandleTable<T> {
     fn index<'a>(&'a self, idx: Handle) -> &'a T {
         match &self.slots[idx.val] {
             &Some(ref v) => return v,
-            &None => panic!(),
+            &None => panic!("invalid handle idx: {}", idx.val),
         }
     }
 }

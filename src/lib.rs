@@ -168,8 +168,10 @@ impl EventLoop {
         match insertion_node_next {
             Some(next_handle) => {
                 self.events.borrow_mut()[next_handle.0].prev = Some(event_handle);
+                self.events.borrow_mut()[event_handle.0].next = Some(next_handle);
             }
-            None => {}
+            None => {
+            }
         }
 
         self.events.borrow_mut()[event_handle.0].prev = Some(self.depth_first_insertion_point.get());
