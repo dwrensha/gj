@@ -202,7 +202,7 @@ impl EventLoop {
 
     fn turn(&self) -> bool {
 
-        let mut event_handle = match self.events.borrow()[self.head.get().0].next {
+        let event_handle = match self.events.borrow()[self.head.get().0].next {
             None => return false,
             Some(event_handle) => { event_handle }
         };

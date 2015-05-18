@@ -89,8 +89,7 @@ pub struct EventDropper {
 impl Drop for EventDropper {
     fn drop(&mut self) {
         with_current_event_loop(|event_loop| {
-            let mut events = event_loop.events.borrow_mut();
-            let maybe_event_node = events.remove(self.event_handle.0);
+            let maybe_event_node = event_loop.events.borrow_mut().remove(self.event_handle.0);
 
             match maybe_event_node {
                 None => {}
@@ -99,7 +98,7 @@ impl Drop for EventDropper {
                     // event_node.next.prev = event_node.prev
                     match event_node.next {
                         Some(e) => {
-                            events[e.0].prev = event_node.prev;
+                            event_loop.events.borrow_mut()[e.0].prev = event_node.prev;
                         }
                         None => {}
                     }
@@ -107,7 +106,7 @@ impl Drop for EventDropper {
 
                     match event_node.prev {
                         Some(e) => {
-                            events[e.0].next = event_node.next;
+                            event_loop.events.borrow_mut()[e.0].next = event_node.next;
                         }
                         None => {}
                     }
@@ -249,7 +248,7 @@ impl TaskSetImpl {
 
       pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<()>>) {
           let task = Task { task_set: task_set, node: None };
-          let (handle, drooper) = EventHandle::new(Box::new(task));
+          let (handle, _dropper) = EventHandle::new(Box::new(task));
           node.on_ready(handle);
           unimplemented!()
     }

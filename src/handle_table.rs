@@ -91,7 +91,7 @@ impl<T> IndexMut<Handle> for HandleTable<T> {
     fn index_mut<'a>(&'a mut self, idx: Handle) -> &'a mut T {
         match &mut self.slots[idx.val] {
             &mut Some(ref mut v) => return v,
-            &mut None => panic!(),
+            &mut None => panic!("invalid handle idx: {}", idx.val),
         }
     }
 }
