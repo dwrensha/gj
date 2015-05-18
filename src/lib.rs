@@ -238,6 +238,8 @@ impl EventLoop {
         if self.tail.get() == event_handle {
             self.tail.set(self.head.get());
         }
+
+        self.depth_first_insertion_point.set(self.head.get());
         return true;
     }
 }
