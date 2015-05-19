@@ -76,7 +76,7 @@ impl <T> Promise <T> where T: 'static {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
-            let (handle, dropper) = private::EventHandle::new(Box::new(done_event));
+            let (handle, _dropper) = private::EventHandle::new(Box::new(done_event));
             self.node.on_ready(handle);
 
             //event_loop.running = true;
