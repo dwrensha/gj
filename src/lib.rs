@@ -130,7 +130,7 @@ pub struct EventLoop {
     running: bool,
     _last_runnable_state: bool,
     events: RefCell<handle_table::HandleTable<private::EventNode>>,
-    head: Cell<private::EventHandle>,
+    head: private::EventHandle,
     tail: Cell<private::EventHandle>,
     depth_first_insertion_point: Cell<private::EventHandle>,
 }
@@ -149,7 +149,7 @@ impl EventLoop {
                 running: false,
                 _last_runnable_state: false,
                 events: RefCell::new(events),
-                head: Cell::new(head_handle),
+                head: head_handle,
                 tail: Cell::new(head_handle),
                 depth_first_insertion_point: Cell::new(head_handle), // insert after this node
             };
@@ -202,7 +202,7 @@ impl EventLoop {
 
     fn turn(&self) -> bool {
 
-        let event_handle = match self.events.borrow()[self.head.get().0].next {
+        let event_handle = match self.events.borrow()[self.head.0].next {
             None => return false,
             Some(event_handle) => { event_handle }
         };
@@ -222,24 +222,18 @@ impl EventLoop {
         // event_node.next.prev = event_node.prev
         match event_node.next {
             Some(e) => {
-                self.events.borrow_mut()[e.0].prev = event_node.prev;
+                self.events.borrow_mut()[e.0].prev = Some(self.head);
             }
             None => {}
         }
 
-        // event_node.prev.next = event_node.next
-        match event_node.prev {
-            Some(e) => {
-                self.events.borrow_mut()[e.0].next = event_node.next;
-            }
-            None => {}
-        }
+        self.events.borrow_mut()[self.head.0].next = event_node.next;
 
         if self.tail.get() == event_handle {
-            self.tail.set(self.head.get());
+            self.tail.set(self.head);
         }
 
-        self.depth_first_insertion_point.set(self.head.get());
+        self.depth_first_insertion_point.set(self.head);
         return true;
     }
 }
