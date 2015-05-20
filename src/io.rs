@@ -22,7 +22,6 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::{DerefMut, Deref};
-use mio::Socket;
 use handle_table::{HandleTable, Handle};
 use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
