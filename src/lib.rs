@@ -217,17 +217,18 @@ impl EventLoop {
             .expect("No event to fire?");
         event.fire();
 
-        let event_node = self.events.borrow_mut().remove(event_handle.0).unwrap();
 
-        // event_node.next.prev = event_node.prev
-        match event_node.next {
+        let maybe_next = self.events.borrow()[event_handle.0].next;
+        self.events.borrow_mut()[self.head.0].next = maybe_next;
+        match maybe_next {
             Some(e) => {
                 self.events.borrow_mut()[e.0].prev = Some(self.head);
             }
             None => {}
         }
 
-        self.events.borrow_mut()[self.head.0].next = event_node.next;
+        self.events.borrow_mut()[event_handle.0].next = None;
+        self.events.borrow_mut()[event_handle.0].prev = None;
 
         if self.tail.get() == event_handle {
             self.tail.set(self.head);
