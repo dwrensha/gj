@@ -208,15 +208,9 @@ impl EventLoop {
         };
         self.depth_first_insertion_point.set(event_handle);
 
-        // When we're firing, head is the dummy event, as always. head.next is the firing event.
-        // depth-first-insertion-point starts out as the firing event.
-        // tail is the last event in the queue. If there are no further events,
-        // tail is the firing event.
-
         let mut event = ::std::mem::replace(&mut self.events.borrow_mut()[event_handle.0].event, None)
             .expect("No event to fire?");
         event.fire();
-
 
         let maybe_next = self.events.borrow()[event_handle.0].next;
         self.events.borrow_mut()[self.head.0].next = maybe_next;

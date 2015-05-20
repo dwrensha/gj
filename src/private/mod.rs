@@ -254,16 +254,6 @@ impl TaskSetImpl {
     }
 }
 
-/*
- An event has two parts. One is owned by the promise that is waiting on it.
-
- If this half is dropped, the event should be cancelled, i.e. removed from the queue.
-
- The other half is owned by the queue. This is the part that needs to be able to call fire().
-
-
-*/
-
 #[allow(dead_code)]
 pub struct Task {
     task_set: Rc<RefCell<TaskSetImpl>>,
