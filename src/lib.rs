@@ -70,7 +70,7 @@ impl <T> Promise <T> where T: 'static {
 
     /// Runs the event loop until the promise is fulfilled.
     ///
-    /// The `WaitScope` argument ensures that `wait()` can only be called the top level of a program.
+    /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
     /// Waiting within event callbacks is disallowed.
     pub fn wait(mut self, _wait_scope: &WaitScope) -> Result<T> {
         with_current_event_loop(move |event_loop| {
@@ -92,10 +92,12 @@ impl <T> Promise <T> where T: 'static {
         })
     }
 
+    /// Creates a new promise that has already been fulfilled.
     pub fn fulfilled(value: T) -> Promise<T> {
         return Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) };
     }
 
+    /// Creates a new promise that has already been rejected with the given error.
     pub fn rejected(error: Error) -> Promise<T> {
         return Promise { node: Box::new(promise_node::Immediate::new(Err(error))) };
     }
@@ -246,7 +248,7 @@ pub fn new_promise_and_fulfiller<T>() -> (Promise<T>, Box<PromiseFulfiller<T>>) 
 }
 
 
-/// Holds a collection of Promise<()>s and ensures that each executes to comleteion.
+/// Holds a collection of Promise<()>s and ensures that each executes to completion.
 /// Destroying a TaskSet automatically cancels all of its unfinished promises.
 pub struct TaskSet {
     task_set_impl: Rc<RefCell<private::TaskSetImpl>>,

@@ -24,7 +24,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use {Result, Error, Promise};
-use private::{Event, EventDropper, EventHandle, with_current_event_loop, PromiseNode};
+use private::{Event, EventDropper, EventHandle, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -77,9 +77,7 @@ impl <T> Immediate<T> {
 
 impl <T> PromiseNode<T> for Immediate<T> {
     fn on_ready(&mut self, event: EventHandle) {
-        with_current_event_loop(|event_loop| {
-            event_loop.arm_breadth_first(event);
-        });
+        event.arm_breadth_first();
     }
     fn get(self: Box<Self>) -> Result<T> {
         self.result

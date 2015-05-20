@@ -65,16 +65,20 @@ impl EventHandle {
 }
 
 
-/*
+
 impl EventHandle {
-    pub fn arm_breadth_first(self: Box<Self>) {
+    pub fn arm_breadth_first(self) {
         with_current_event_loop(|event_loop| {
-            event_loop.borrow_mut().arm_breadth_first(self);
+            event_loop.arm_breadth_first(self);
         });
     }
-} */
 
-
+    pub fn arm_depth_first(self) {
+        with_current_event_loop(|event_loop| {
+            event_loop.arm_depth_first(self);
+        });
+    }
+}
 
 pub struct EventNode {
     pub event: Option<Box<Event>>,
@@ -155,13 +159,11 @@ impl OnReadyEvent {
     }
 
     fn init(&mut self, new_event: EventHandle) {
-        with_current_event_loop(|event_loop| {
-            if self.is_already_ready() {
-                event_loop.arm_breadth_first(new_event);
-            } else {
-                *self = OnReadyEvent::Full(new_event);
-            }
-        });
+        if self.is_already_ready() {
+            new_event.arm_breadth_first();
+        } else {
+            *self = OnReadyEvent::Full(new_event);
+        }
     }
 
     fn arm(&mut self) {
@@ -171,9 +173,7 @@ impl OnReadyEvent {
             let old_self = ::std::mem::replace(self, OnReadyEvent::Empty);
             match old_self {
                 OnReadyEvent::Full(event) => {
-                    with_current_event_loop(|event_loop| {
-                        event_loop.arm_depth_first(event);
-                    });
+                    event.arm_depth_first();
                 }
                 _ => {
                     panic!("armed an event twice?");
