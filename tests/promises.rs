@@ -252,11 +252,9 @@ fn task_set() {
         }));
 
         {
-            /* BUG: this hangs.
-            gj::Promise::fulfilled(()).then(|()| {
+            gj::Promise::fulfilled(()).then(|()| -> gj::Result<gj::Promise<()>> {
                 panic!("Promise without waiter shouldn't execute.");
-                return Ok(gj::Promise::fulfilled(()));
-            }); */
+            });
         }
 
         gj::Promise::fulfilled(()).map(|()| -> gj::Result<()> {

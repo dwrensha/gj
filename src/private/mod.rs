@@ -110,17 +110,16 @@ impl Drop for EventDropper {
                         None => {}
                     }
                     // event_node.prev.next = event_node.next
-
                     match event_node.prev {
                         Some(e) => {
                             event_loop.events.borrow_mut()[e.0].next = event_node.next;
+                            event_loop.tail.set(e);
                         }
                         None => {}
                     }
                 }
             }
         });
-        // TODO what if it was the tail?
     }
 }
 
