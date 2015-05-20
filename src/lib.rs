@@ -76,7 +76,8 @@ impl <T> Promise <T> where T: 'static {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
-            let (handle, _dropper) = private::EventHandle::new(Box::new(done_event));
+            let (handle, _dropper) = private::EventHandle::new();
+            handle.set(Box::new(done_event));
             self.node.on_ready(handle);
 
             //event_loop.running = true;
@@ -212,7 +213,7 @@ impl EventLoop {
 
         let mut event = ::std::mem::replace(&mut self.events.borrow_mut()[event_handle.0].event, None)
             .expect("No event to fire?");
-        event.fire();
+        let _dropper = event.fire();
 
         let maybe_next = self.events.borrow()[event_handle.0].next;
         self.events.borrow_mut()[self.head.0].next = maybe_next;

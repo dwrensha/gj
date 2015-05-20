@@ -22,7 +22,7 @@
 use std::collections::binary_heap::BinaryHeap;
 use std::ops::{Index, IndexMut};
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone, Hash)]
 pub struct Handle { pub val : usize }
 
 // Reverse ordering.

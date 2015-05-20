@@ -21,6 +21,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashMap;
 use handle_table::{Handle};
 use {Error, Result, PromiseFulfiller, EventLoop, ErrorHandler};
 
@@ -47,26 +48,27 @@ pub trait PromiseNode<T> {
 }
 
 pub trait Event {
-    fn fire(&mut self);
-
+    fn fire(&mut self) -> Option<EventDropper>;
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone, Hash)]
 pub struct EventHandle(pub Handle);
 
 impl EventHandle {
-    pub fn new(event: Box<Event>) -> (EventHandle, EventDropper) {
+    pub fn new() -> (EventHandle, EventDropper) {
         return with_current_event_loop(|event_loop| {
-            let node = EventNode { event: Some(event), next: None, prev: None };
+            let node = EventNode { event: None, next: None, prev: None };
             let handle = EventHandle(event_loop.events.borrow_mut().push(node));
             return (handle, EventDropper { event_handle: handle });
         });
     }
-}
 
+    pub fn set(&self, event: Box<Event>) {
+        return with_current_event_loop(|event_loop| {
+            event_loop.events.borrow_mut()[self.0].event = Some(event);
+        });
+    }
 
-
-impl EventHandle {
     pub fn arm_breadth_first(self) {
         with_current_event_loop(|event_loop| {
             event_loop.arm_breadth_first(self);
@@ -86,6 +88,7 @@ pub struct EventNode {
     pub prev: Option<EventHandle>
 }
 
+#[derive(PartialEq, Eq, Hash)]
 pub struct EventDropper {
     event_handle: EventHandle,
 }
@@ -132,8 +135,9 @@ impl BoolEvent {
 }
 
 impl Event for BoolEvent {
-    fn fire(&mut self) {
+    fn fire(&mut self) -> Option<EventDropper> {
         self.fired.set(true);
+        return None;
     }
 }
 
@@ -239,29 +243,32 @@ impl <T> PromiseFulfiller<T> for Rc<RefCell<PromiseAndFulfillerHub<T>>> where T:
 
 pub struct TaskSetImpl {
     error_handler: Box<ErrorHandler>,
+    tasks: HashMap<EventHandle, EventDropper>,
 }
 
 impl TaskSetImpl {
     pub fn new(error_handler: Box<ErrorHandler>) -> TaskSetImpl {
-        TaskSetImpl { error_handler: error_handler }
+        TaskSetImpl { error_handler: error_handler,
+                      tasks: HashMap::new() }
     }
 
       pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<()>>) {
-          let task = Task { task_set: task_set, node: None };
-          let (handle, _dropper) = EventHandle::new(Box::new(task));
+          let (handle, dropper) = EventHandle::new();
           node.on_ready(handle);
-          unimplemented!()
+          let task = Task { task_set: task_set.clone(), node: Some(node), event_handle: handle };
+          handle.set(Box::new(task));
+          task_set.borrow_mut().tasks.insert(handle, dropper);
     }
 }
 
-#[allow(dead_code)]
 pub struct Task {
     task_set: Rc<RefCell<TaskSetImpl>>,
     node: Option<Box<PromiseNode<()>>>,
+    event_handle: EventHandle,
 }
 
 impl Event for Task {
-    fn fire(&mut self) {
+    fn fire(&mut self) -> Option<EventDropper> {
         let maybe_node = ::std::mem::replace(&mut self.node, None);
         match maybe_node {
             None => {
@@ -269,9 +276,12 @@ impl Event for Task {
             }
             Some(node) => {
                 match node.get() {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        return self.task_set.borrow_mut().tasks.remove(&self.event_handle);
+                    }
                     Err(e) => {
                         self.task_set.borrow_mut().error_handler.task_failed(e);
+                        return None;
                     }
                 }
             }

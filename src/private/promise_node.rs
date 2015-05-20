@@ -95,7 +95,7 @@ struct ChainEvent<T> {
 }
 
 impl <T> Event for ChainEvent<T> where T: 'static {
-    fn fire(&mut self) {
+    fn fire(&mut self) -> Option<EventDropper> {
         let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
         match state {
             ChainState::Step1(inner, on_ready_event) => {
@@ -125,6 +125,7 @@ impl <T> Event for ChainEvent<T> where T: 'static {
             }
             _ => panic!("should be in step 1"),
         }
+        return None;
     }
 }
 
@@ -139,7 +140,8 @@ impl <T> Chain<T> where T: 'static {
 
         let state = Rc::new(RefCell::new(ChainState::Step3));
         let event = Box::new(ChainEvent { state: state.clone() });
-        let (handle, dropper) = EventHandle::new(event);
+        let (handle, dropper) = EventHandle::new();
+        handle.set(event);
         inner.on_ready(handle);
         *state.borrow_mut() = ChainState::Step1(inner, None);
 

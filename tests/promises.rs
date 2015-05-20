@@ -224,3 +224,47 @@ fn ordering() {
         assert_eq!(counter.get(), 7);
     });
 }
+
+
+pub struct ErrorHandlerImpl {
+    error_count: ::std::rc::Rc<::std::cell::Cell<u32>>,
+}
+
+impl gj::ErrorHandler for ErrorHandlerImpl {
+    fn task_failed(&mut self, _error: gj::Error) {
+        self.error_count.set(self.error_count.get() + 1);
+    }
+}
+
+#[test]
+fn task_set() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
+        let mut tasks = gj::TaskSet::new(Box::new(ErrorHandlerImpl {error_count: error_count.clone()}));
+        tasks.add(gj::Promise::fulfilled(()).map(|()| {
+            return Ok(());
+        }));
+        tasks.add(gj::Promise::fulfilled(()).map(|()| {
+            return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other, "Fake IO Error")))
+        }));
+        tasks.add(gj::Promise::fulfilled(()).map(|()| {
+            return Ok(());
+        }));
+
+        {
+            /* BUG: this hangs.
+            gj::Promise::fulfilled(()).then(|()| {
+                panic!("Promise without waiter shouldn't execute.");
+                return Ok(gj::Promise::fulfilled(()));
+            }); */
+        }
+
+        gj::Promise::fulfilled(()).map(|()| -> gj::Result<()> {
+            panic!("Promise without waiter shouldn't execute.");
+        });
+
+        gj::Promise::fulfilled(()).map(|()| { return Ok(()) } ).wait(wait_scope).unwrap();
+
+        assert_eq!(error_count.get(), 1);
+    });
+}
