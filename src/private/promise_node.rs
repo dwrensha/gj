@@ -24,7 +24,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use {Result, Error, Promise};
-use private::{Event, with_current_event_loop, PromiseNode};
+use private::{Event, EventDropper, EventHandle, with_current_event_loop, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -47,7 +47,7 @@ where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
 
 impl <T, DepT, Func, ErrorFunc> PromiseNode<T> for Transform<T, DepT, Func, ErrorFunc>
 where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
-    fn on_ready(&mut self, event: Box<Event>) {
+    fn on_ready(&mut self, event: EventHandle) {
         self.dependency.on_ready(event);
     }
     fn get(self: Box<Self>) -> Result<T> {
@@ -76,7 +76,7 @@ impl <T> Immediate<T> {
 }
 
 impl <T> PromiseNode<T> for Immediate<T> {
-    fn on_ready(&mut self, event: Box<Event>) {
+    fn on_ready(&mut self, event: EventHandle) {
         with_current_event_loop(|event_loop| {
             event_loop.arm_breadth_first(event);
         });
@@ -87,8 +87,8 @@ impl <T> PromiseNode<T> for Immediate<T> {
 }
 
 enum ChainState<T> {
-    Step1(Box<PromiseNode<Promise<T>>>, Option<Box<Event>>),
-    Step2(Box<PromiseNode<T>>, Option<Box<Event>>),
+    Step1(Box<PromiseNode<Promise<T>>>, Option<EventHandle>),
+    Step2(Box<PromiseNode<T>>, Option<EventHandle>),
     Step3 // done
 }
 
@@ -133,6 +133,7 @@ impl <T> Event for ChainEvent<T> where T: 'static {
 /// Promise node that reduces Promise<Promise<T>> to Promise<T>.
 pub struct Chain<T> {
     state: Rc<RefCell<ChainState<T>>>,
+    dropper: EventDropper,
 }
 
 impl <T> Chain<T> where T: 'static {
@@ -140,15 +141,16 @@ impl <T> Chain<T> where T: 'static {
 
         let state = Rc::new(RefCell::new(ChainState::Step3));
         let event = Box::new(ChainEvent { state: state.clone() });
-        inner.on_ready(event);
+        let (handle, dropper) = EventHandle::new(event);
+        inner.on_ready(handle);
         *state.borrow_mut() = ChainState::Step1(inner, None);
 
-        Chain { state: state }
+        Chain { state: state, dropper: dropper }
     }
 }
 
 impl <T> PromiseNode<T> for Chain<T> {
-    fn on_ready(&mut self, event: Box<Event>) {
+    fn on_ready(&mut self, event: EventHandle) {
         match &mut *self.state.borrow_mut() {
             &mut ChainState::Step2(ref mut inner, _) => {
                 inner.on_ready(event);

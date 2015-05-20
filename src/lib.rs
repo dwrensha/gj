@@ -21,7 +21,7 @@
 
 extern crate mio;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
@@ -76,7 +76,8 @@ impl <T> Promise <T> where T: 'static {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
-            self.node.on_ready(Box::new(done_event));
+            let (handle, _dropper) = private::EventHandle::new(Box::new(done_event));
+            self.node.on_ready(handle);
 
             //event_loop.running = true;
 
@@ -128,22 +129,30 @@ pub struct EventLoop {
     event_port: RefCell<io::MioEventPort>,
     running: bool,
     _last_runnable_state: bool,
-    events: RefCell<::std::collections::VecDeque<Box<Event>>>,
-    depth_first_events: RefCell<::std::collections::VecDeque<Box<Event>>>,
+    events: RefCell<handle_table::HandleTable<private::EventNode>>,
+    head: private::EventHandle,
+    tail: Cell<private::EventHandle>,
+    depth_first_insertion_point: Cell<private::EventHandle>,
 }
 
 
 
 impl EventLoop {
     pub fn top_level<F>(f: F) where F: FnOnce(&WaitScope) {
-        EVENT_LOOP.with(|maybe_event_loop| {
+        let mut events = handle_table::HandleTable::<private::EventNode>::new();
+        let dummy = private::EventNode { event: None, next: None, prev: None };
+        let head_handle = private::EventHandle(events.push(dummy));
+
+        EVENT_LOOP.with(move |maybe_event_loop| {
             let event_loop = EventLoop {
                 event_port: RefCell::new(io::MioEventPort::new().unwrap()),
                 running: false,
                 _last_runnable_state: false,
-                events: RefCell::new(::std::collections::VecDeque::new()),
-                depth_first_events: RefCell::new(::std::collections::VecDeque::new()) };
-
+                events: RefCell::new(events),
+                head: head_handle,
+                tail: Cell::new(head_handle),
+                depth_first_insertion_point: Cell::new(head_handle), // insert after this node
+            };
 
             assert!(maybe_event_loop.borrow().is_none());
             *maybe_event_loop.borrow_mut() = Some(event_loop);
@@ -152,12 +161,30 @@ impl EventLoop {
         f(&wait_scope);
     }
 
-    fn arm_depth_first(&self, event: Box<Event>) {
-        self.depth_first_events.borrow_mut().push_front(event);
+    fn arm_depth_first(&self, event_handle: private::EventHandle) {
+
+        let insertion_node_next = self.events.borrow()[self.depth_first_insertion_point.get().0].next;
+
+        match insertion_node_next {
+            Some(next_handle) => {
+                self.events.borrow_mut()[next_handle.0].prev = Some(event_handle);
+                self.events.borrow_mut()[event_handle.0].next = Some(next_handle);
+            }
+            None => {
+                self.tail.set(event_handle);
+            }
+        }
+
+        self.events.borrow_mut()[event_handle.0].prev = Some(self.depth_first_insertion_point.get());
+        self.events.borrow_mut()[self.depth_first_insertion_point.get().0].next = Some(event_handle);
+        self.depth_first_insertion_point.set(event_handle);
     }
 
-    fn arm_breadth_first(&self, event: Box<Event>) {
-        self.events.borrow_mut().push_back(event);
+    fn arm_breadth_first(&self, event_handle: private::EventHandle) {
+        let events = &mut *self.events.borrow_mut();
+        events[self.tail.get().0].next = Some(event_handle);
+        events[event_handle.0].prev = Some(self.tail.get());
+        self.tail.set(event_handle);
     }
 
     /// Runs the event loop for `max_turn_count` turns or until there is nothing left to be done,
@@ -175,19 +202,33 @@ impl EventLoop {
 
     fn turn(&self) -> bool {
 
-        while !self.depth_first_events.borrow().is_empty() {
-            let event = self.depth_first_events.borrow_mut().pop_front().unwrap();
-            self.events.borrow_mut().push_front(event);
-        }
-
-        assert!(self.depth_first_events.borrow().is_empty());
-
-        let mut event = match self.events.borrow_mut().pop_front() {
+        let event_handle = match self.events.borrow()[self.head.0].next {
             None => return false,
-            Some(event) => { event }
+            Some(event_handle) => { event_handle }
         };
+        self.depth_first_insertion_point.set(event_handle);
+
+        let mut event = ::std::mem::replace(&mut self.events.borrow_mut()[event_handle.0].event, None)
+            .expect("No event to fire?");
         event.fire();
 
+        let maybe_next = self.events.borrow()[event_handle.0].next;
+        self.events.borrow_mut()[self.head.0].next = maybe_next;
+        match maybe_next {
+            Some(e) => {
+                self.events.borrow_mut()[e.0].prev = Some(self.head);
+            }
+            None => {}
+        }
+
+        self.events.borrow_mut()[event_handle.0].next = None;
+        self.events.borrow_mut()[event_handle.0].prev = None;
+
+        if self.tail.get() == event_handle {
+            self.tail.set(self.head);
+        }
+
+        self.depth_first_insertion_point.set(self.head);
         return true;
     }
 }

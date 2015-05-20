@@ -53,14 +53,18 @@ impl <T> HandleTable<T> {
                       free_ids : BinaryHeap::new() }
     }
 
-    pub fn _erase(&mut self, handle: Handle) {
-        self.slots[handle.val] = None;
-        self.free_ids.push(handle);
+    pub fn remove(&mut self, handle: Handle) -> Option<T> {
+        let result = ::std::mem::replace(&mut self.slots[handle.val], None);
+        if !result.is_none() {
+            self.free_ids.push(handle);
+        }
+        return result;
     }
 
     pub fn push(&mut self, val : T) -> Handle {
         match self.free_ids.pop() {
             Some(Handle { val: id }) => {
+                assert!(self.slots[id as usize].is_none());
                 self.slots[id as usize] = Some(val);
                 Handle { val: id }
             }
@@ -78,7 +82,7 @@ impl<T> Index<Handle> for HandleTable<T> {
     fn index<'a>(&'a self, idx: Handle) -> &'a T {
         match &self.slots[idx.val] {
             &Some(ref v) => return v,
-            &None => panic!(),
+            &None => panic!("invalid handle idx: {}", idx.val),
         }
     }
 }
@@ -87,7 +91,7 @@ impl<T> IndexMut<Handle> for HandleTable<T> {
     fn index_mut<'a>(&'a mut self, idx: Handle) -> &'a mut T {
         match &mut self.slots[idx.val] {
             &mut Some(ref mut v) => return v,
-            &mut None => panic!(),
+            &mut None => panic!("invalid handle idx: {}", idx.val),
         }
     }
 }
