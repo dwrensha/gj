@@ -39,17 +39,25 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
 
 fn accept_loop(receiver: gj::io::ConnectionReceiver,
                outbound_addr: gj::io::NetworkAddress,
-               mut task_set: Vec<gj::Promise<()>>) -> gj::Promise<()> {
+               mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
     return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
         println!("handling connection");
 
         return Ok(outbound_addr.connect().then(move |(dst_tx, dst_rx)| {
-            task_set.push(forward(src_rx, dst_tx, vec![0; 1024]));
-            task_set.push(forward(dst_rx, src_tx, vec![0; 1024]));
+            task_set.add(forward(src_rx, dst_tx, vec![0; 1024]));
+            task_set.add(forward(dst_rx, src_tx, vec![0; 1024]));
             return Ok(accept_loop(receiver, outbound_addr, task_set));
         }));
     });
+}
+
+pub struct Reporter;
+
+impl gj::ErrorHandler for Reporter {
+    fn task_failed(&mut self, error: gj::Error) {
+        println!("Task failed: {:?}", error);
+    }
 }
 
 pub fn main() {
@@ -61,6 +69,8 @@ pub fn main() {
         // Hard coded to a google IP
         let outbound_addr = gj::io::NetworkAddress::new("216.58.216.164:80").unwrap();
 
-        accept_loop(receiver, outbound_addr, Vec::new()).wait(wait_scope).unwrap();
+        accept_loop(receiver,
+                    outbound_addr,
+                    gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope).unwrap();
     });
 }

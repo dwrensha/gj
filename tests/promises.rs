@@ -251,11 +251,9 @@ fn task_set() {
             return Ok(());
         }));
 
-        {
-            gj::Promise::fulfilled(()).then(|()| -> gj::Result<gj::Promise<()>> {
-                panic!("Promise without waiter shouldn't execute.");
-            });
-        }
+        gj::Promise::fulfilled(()).then(|()| -> gj::Result<gj::Promise<()>> {
+            panic!("Promise without waiter shouldn't execute.");
+        });
 
         gj::Promise::fulfilled(()).map(|()| -> gj::Result<()> {
             panic!("Promise without waiter shouldn't execute.");
