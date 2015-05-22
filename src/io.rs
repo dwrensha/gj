@@ -190,6 +190,15 @@ struct AsyncIo {
     handle: Handle,
 }
 
+impl Drop for AsyncIo {
+    fn drop(&mut self) {
+        return with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
+            event_loop.event_port.borrow_mut().reactor.deregister(&self.stream);
+        });
+    }
+}
+
 impl AsyncIo {
     fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> (AsyncOutputStream, AsyncInputStream) {
         let hub = Rc::new(RefCell::new(AsyncIo { stream: stream, handle: handle }));
