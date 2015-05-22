@@ -269,3 +269,7 @@ pub trait ErrorHandler {
     fn task_failed(&mut self, error: Error);
 }
 
+pub fn join_promises<T>(promises: Vec<Promise<T>>) -> Promise<Vec<T>> {
+    let nodes = promises.into_iter().map(|p| { p.node }).collect();
+    Promise { node: Box::new(private::promise_node::ArrayJoin::new(nodes)) }
+}

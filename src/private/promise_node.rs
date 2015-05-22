@@ -24,7 +24,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use {Result, Error, Promise};
-use private::{Event, EventDropper, EventHandle, PromiseNode};
+use private::{Event, EventDropper, EventHandle, OnReadyEvent, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -174,5 +174,61 @@ impl <T> PromiseNode<T> for Chain<T> {
                 panic!()
             }
         }
+    }
+}
+
+
+struct ArrayJoinBranch {
+    state: Rc<RefCell<ArrayJoinState>>
+}
+
+impl Event for ArrayJoinBranch {
+    fn fire(&mut self) -> Option<EventDropper> {
+        println!("firing");
+        let state = &mut *self.state.borrow_mut();
+        state.count_left -= 1;
+        if state.count_left == 0 {
+            state.on_ready_event.arm();
+        }
+        return None;
+    }
+}
+
+struct ArrayJoinState {
+    count_left: usize,
+    on_ready_event: OnReadyEvent,
+}
+
+pub struct ArrayJoin<T> {
+    state: Rc<RefCell<ArrayJoinState>>,
+    branches: Vec<(Box<PromiseNode<T>>, EventDropper)>,
+}
+
+impl<T> ArrayJoin<T> {
+    pub fn new(nodes: Vec<Box<PromiseNode<T>>>) -> ArrayJoin<T> {
+        let state = Rc::new(RefCell::new(ArrayJoinState { count_left: nodes.len(),
+                                                          on_ready_event: OnReadyEvent::Empty }));
+        let branches =
+            nodes.into_iter()
+            .map(|mut node| {
+                let (handle, dropper) = EventHandle::new();
+                node.on_ready(handle);
+                handle.set(Box::new(ArrayJoinBranch { state: state.clone()}));
+                return (node, dropper);
+            }).collect();
+        return ArrayJoin {state: state, branches: branches};
+    }
+}
+
+impl <T> PromiseNode<Vec<T>> for ArrayJoin<T> {
+    fn on_ready(&mut self, event: EventHandle) {
+        self.state.borrow_mut().on_ready_event.init(event);
+    }
+    fn get(self: Box<Self>) -> Result<Vec<T>> {
+        let mut result = Vec::new();
+        for (dependency, _dropper) in self.branches {
+            result.push(try!(dependency.get()));
+        }
+        return Ok(result);
     }
 }

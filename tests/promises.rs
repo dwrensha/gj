@@ -264,3 +264,20 @@ fn task_set() {
         assert_eq!(error_count.get(), 1);
     });
 }
+
+#[test]
+fn array_join() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let promises = vec![gj::Promise::fulfilled(123),
+                            gj::Promise::fulfilled(456),
+                            gj::Promise::fulfilled(789)];
+
+        let promise = gj::join_promises(promises);
+        let result = promise.wait(wait_scope).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], 123);
+        assert_eq!(result[1], 456);
+        assert_eq!(result[2], 789);
+    });
+}
