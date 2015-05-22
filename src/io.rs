@@ -145,24 +145,35 @@ impl Drop for ConnectionReceiver {
 }
 
 impl ConnectionReceiver {
-    pub fn accept(self) -> Promise<(ConnectionReceiver, (AsyncOutputStream, AsyncInputStream))> {
-        with_current_event_loop(move |event_loop| {
-            let promise =
-                event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
 
-            return promise.map(move |()| {
-                let stream = try!(self.listener.accept()).unwrap();
+    fn accept_internal(self) -> Result<Promise<(ConnectionReceiver, (AsyncOutputStream, AsyncInputStream))>> {
+        let accept_result = try!(self.listener.accept());
+        match accept_result {
+            Some(stream) => {
                 let handle = FdObserver::new();
-
                 return with_current_event_loop(move |event_loop| {
                     try!(event_loop.event_port.borrow_mut().reactor.register_opt(
                         &stream, ::mio::Token(handle.val),
                         ::mio::Interest::writable() | ::mio::Interest::readable(),
                         ::mio::PollOpt::edge()));
-                    return Ok((self, AsyncIo::new(stream, handle)));
+                    return Ok(Promise::fulfilled((self, AsyncIo::new(stream, handle))));
                 });
-            });
-        })
+            }
+            None => {
+                return with_current_event_loop(move |event_loop| {
+                    let promise =
+                        event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
+                    return Ok(promise.then(move |()| {
+                        return self.accept_internal();
+                    }));
+                });
+            }
+        }
+    }
+
+
+    pub fn accept(self) -> Promise<(ConnectionReceiver, (AsyncOutputStream, AsyncInputStream))> {
+        return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
     }
 }
 
