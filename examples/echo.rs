@@ -38,17 +38,12 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
 }
 
 fn accept_loop(receiver: gj::io::ConnectionReceiver,
-               outbound_addr: gj::io::NetworkAddress,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
     return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
         println!("handling connection");
-
-        return Ok(outbound_addr.connect().then(move |(dst_tx, dst_rx)| {
-            task_set.add(forward(src_rx, dst_tx, vec![0; 1024]));
-            task_set.add(forward(dst_rx, src_tx, vec![0; 1024]));
-            return Ok(accept_loop(receiver, outbound_addr, task_set));
-        }));
+        task_set.add(forward(src_rx, src_tx, vec![0; 1024]));
+        return Ok(accept_loop(receiver, task_set));
     });
 }
 
@@ -61,16 +56,17 @@ impl gj::ErrorHandler for Reporter {
 }
 
 pub fn main() {
-    gj::EventLoop::top_level(|wait_scope| {
+    let args : Vec<String> = ::std::env::args().collect();
+    if args.len() != 2 {
+        println!("usage: {} ADDRESS[:PORT]", args[0]);
+        return;
+    }
 
-        let addr = gj::io::NetworkAddress::new("127.0.0.1:9999").unwrap();
+    gj::EventLoop::top_level(move |wait_scope| {
+        let addr = gj::io::NetworkAddress::new(&*args[1]).unwrap();
         let receiver = addr.listen().unwrap();
 
-        // Hard coded to a google IP
-        let outbound_addr = gj::io::NetworkAddress::new("216.58.216.164:80").unwrap();
-
         accept_loop(receiver,
-                    outbound_addr,
                     gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope).unwrap();
     });
 }
