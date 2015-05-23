@@ -46,41 +46,69 @@ pub struct Promise<T> where T: 'static {
 }
 
 impl <T> Promise <T> {
-    pub fn then<F, R>(self, func: F) -> Promise<R>
-        where F: 'static + FnOnce(T) -> Result<Promise<R>>,
-              R: 'static
-    {
-        self.then_else(func, |e| { return Err(e); })
-    }
-
+    /// Chains further computation to be executed once the promise resolves.
+    /// When the promise is fulfilled successfully, invokes `func` on its result.
+    /// When the promise is rejected, invokes `error_handler` on the resulting error.
+    ///
+    /// If the returned promise is dropped before the chained computation runs, the chained
+    /// computation will be cancelled.
+    ///
+    /// Always returns immediately, even if the promise is already resolved. The earliest that
+    /// `func` or `error_handler` might be invoked is during the next `turn()` of the event loop.
     pub fn then_else<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
-        where F: 'static + FnOnce(T) -> Result<Promise<R>>,
-              G: 'static + FnOnce(Error) -> Result<Promise<R>>,
+        where F: 'static,
+              F: FnOnce(T) -> Result<Promise<R>>,
+              G: 'static,
+              G: FnOnce(Error) -> Result<Promise<R>>,
               R: 'static
     {
         let intermediate = Box::new(promise_node::Transform::new(self.node, func, error_handler));
         Promise { node: Box::new(promise_node::Chain::new(intermediate)) }
     }
 
-    pub fn map<F, R>(self, func: F) -> Promise<R>
-        where F: 'static + FnOnce(T) -> Result<R>,
+    /// Calls `then_else()` with a default error handler that simply propagates all errors.
+    pub fn then<F, R>(self, func: F) -> Promise<R>
+        where F: 'static,
+              F: FnOnce(T) -> Result<Promise<R>>,
               R: 'static
     {
-        self.map_else(func, |e| { return Err(e); })
+        self.then_else(func, |e| { return Err(e); })
     }
 
+    /// Like then_else() but for a `func` that returns a direct value rather than a promise.
     pub fn map_else<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
-        where F: 'static + FnOnce(T) -> Result<R>,
-              G: 'static + FnOnce(Error) -> Result<R>,
+        where F: 'static,
+              F: FnOnce(T) -> Result<R>,
+              G: 'static,
+              G: FnOnce(Error) -> Result<R>,
               R: 'static
     {
         Promise { node: Box::new(promise_node::Transform::new(self.node, func, error_handler)) }
+    }
+
+    /// Calls `map_else()` with a default error handler that simple propagates all errors.
+    pub fn map<F, R>(self, func: F) -> Promise<R>
+        where F: 'static,
+              F: FnOnce(T) -> Result<R>,
+              R: 'static
+    {
+        self.map_else(func, |e| { return Err(e); })
     }
 
     /// Returns a new promise that resolves when either `self` or `other` resolves. The promise that
     /// doesn't resolve first is cancelled.
     pub fn exclusive_join(self, other: Promise<T>) -> Promise<T> {
         return Promise { node: Box::new(private::promise_node::ExclusiveJoin::new(self.node, other.node)) };
+    }
+
+    /// Creates a new promise that has already been fulfilled.
+    pub fn fulfilled(value: T) -> Promise<T> {
+        return Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) };
+    }
+
+    /// Creates a new promise that has already been rejected with the given error.
+    pub fn rejected(error: Error) -> Promise<T> {
+        return Promise { node: Box::new(promise_node::Immediate::new(Err(error))) };
     }
 
     /// Runs the event loop until the promise is fulfilled.
@@ -106,16 +134,6 @@ impl <T> Promise <T> {
 
             self.node.get()
         })
-    }
-
-    /// Creates a new promise that has already been fulfilled.
-    pub fn fulfilled(value: T) -> Promise<T> {
-        return Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) };
-    }
-
-    /// Creates a new promise that has already been rejected with the given error.
-    pub fn rejected(error: Error) -> Promise<T> {
-        return Promise { node: Box::new(promise_node::Immediate::new(Err(error))) };
     }
 }
 
