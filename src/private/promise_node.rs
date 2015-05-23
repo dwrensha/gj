@@ -184,7 +184,6 @@ struct ArrayJoinBranch {
 
 impl Event for ArrayJoinBranch {
     fn fire(&mut self) -> Option<EventDropper> {
-        println!("firing");
         let state = &mut *self.state.borrow_mut();
         state.count_left -= 1;
         if state.count_left == 0 {
@@ -230,5 +229,58 @@ impl <T> PromiseNode<Vec<T>> for ArrayJoin<T> {
             result.push(try!(dependency.get()));
         }
         return Ok(result);
+    }
+}
+
+enum ExclusiveJoinSide { Left, Right }
+
+struct ExclusiveJoinBranch<T> {
+    state: Rc<RefCell<ExclusiveJoinState<T>>>,
+    side: ExclusiveJoinSide,
+}
+
+impl<T> Event for ExclusiveJoinBranch<T> {
+    fn fire(&mut self) -> Option<EventDropper> {
+        let state = &mut *self.state.borrow_mut();
+        match self.side {
+            ExclusiveJoinSide::Left => {
+                state.right = None
+            }
+            ExclusiveJoinSide::Right => {
+                state.left = None
+            }
+        }
+        state.on_ready_event.arm();
+        return None;
+    }
+}
+
+struct ExclusiveJoinState<T> {
+    on_ready_event: OnReadyEvent,
+    left: Option<(Box<PromiseNode<T>>, EventDropper)>,
+    right: Option<(Box<PromiseNode<T>>, EventDropper)>,
+
+}
+
+pub struct ExclusiveJoin<T> {
+    state: Rc<RefCell<ExclusiveJoinState<T>>>,
+}
+
+impl <T> PromiseNode<T> for ExclusiveJoin<T> {
+    fn on_ready(&mut self, event: EventHandle) {
+        self.state.borrow_mut().on_ready_event.init(event);
+    }
+    fn get(self: Box<Self>) -> Result<T> {
+        unimplemented!()
+/*
+        match self.state.borrow().left {
+            Some((node, dropper)) => {
+
+            }
+            None => {
+
+            }
+        }
+        return Ok(result); */
     }
 }
