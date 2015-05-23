@@ -19,6 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//! Asynchronous input and output.
+
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::{DerefMut, Deref};
@@ -288,7 +290,7 @@ impl AsyncWrite for AsyncOutputStream {
 }
 
 
-pub struct FdObserver {
+struct FdObserver {
     read_fulfiller: Option<Box<PromiseFulfiller<()>>>,
     write_fulfiller: Option<Box<PromiseFulfiller<()>>>,
 }

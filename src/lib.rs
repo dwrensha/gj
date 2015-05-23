@@ -19,6 +19,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//! A library providing high-level abstractions for event loop concurrency,
+//! heavily borrowing ideas from [KJ](https://capnproto.org/cxxrpc.html#kj-concurrency-framework).
+//! Allows for coordination of asynchronous tasks using [promises](struct.Promise.html) as
+//! a basic building block.
+
 extern crate mio;
 
 use std::cell::{Cell, RefCell};
@@ -35,12 +40,12 @@ pub type Error = Box<::std::error::Error>;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 
-/// The basic primitive of asynchronous computation in GJ.
+/// A computation that might eventually resolve to a value of type `T`.
 pub struct Promise<T> where T: 'static {
     node : Box<PromiseNode<T>>,
 }
 
-impl <T> Promise <T> where T: 'static {
+impl <T> Promise <T> {
     pub fn then<F, R>(self, func: F) -> Promise<R>
         where F: 'static + FnOnce(T) -> Result<Promise<R>>,
               R: 'static
@@ -114,10 +119,12 @@ impl <T> Promise <T> where T: 'static {
     }
 }
 
+/// A scope in which asynchronous programming can occur. Corresponds to the top level scope
+/// of some event loop.
 pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
 /// Interface between an `EventLoop` and events originating from outside of the loop's thread.
-pub trait EventPort {
+trait EventPort {
     /// Waits for an external event to arrive, sleeping if necessary.
     /// Returns true if wake() has been called from another thread.
     fn wait(&mut self) -> bool;
@@ -136,11 +143,11 @@ pub trait EventPort {
     fn wake(&mut self) { unimplemented!(); }
 }
 
-/// A queue of events being executed in a loop.
+/// A queue of events being executed in a loop on a single thread.
 pub struct EventLoop {
 //    daemons: TaskSetImpl,
     event_port: RefCell<io::MioEventPort>,
-    running: bool,
+    _running: bool,
     _last_runnable_state: bool,
     events: RefCell<handle_table::HandleTable<private::EventNode>>,
     head: private::EventHandle,
@@ -151,7 +158,9 @@ pub struct EventLoop {
 
 
 impl EventLoop {
-    pub fn top_level<F>(f: F) where F: FnOnce(&WaitScope) {
+    /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
+    /// closure and then drops the event loop.
+    pub fn top_level<F>(main: F) where F: FnOnce(&WaitScope) {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
         let dummy = private::EventNode { event: None, next: None, prev: None };
         let head_handle = private::EventHandle(events.push(dummy));
@@ -159,7 +168,7 @@ impl EventLoop {
         EVENT_LOOP.with(move |maybe_event_loop| {
             let event_loop = EventLoop {
                 event_port: RefCell::new(io::MioEventPort::new().unwrap()),
-                running: false,
+                _running: false,
                 _last_runnable_state: false,
                 events: RefCell::new(events),
                 head: head_handle,
@@ -172,7 +181,7 @@ impl EventLoop {
         });
         let wait_scope = WaitScope(::std::marker::PhantomData );
 
-        f(&wait_scope);
+        main(&wait_scope);
 
         EVENT_LOOP.with(move |maybe_event_loop| {
             *maybe_event_loop.borrow_mut() = None;
@@ -208,8 +217,8 @@ impl EventLoop {
     /// Runs the event loop for `max_turn_count` turns or until there is nothing left to be done,
     /// whichever comes first. This never calls the `EventPort`'s `sleep()` or `poll()`. It will
     /// call the `EventPort`'s `set_runnable(false)` if the queue becomes empty.
-    pub fn run(&mut self, max_turn_count : u32) {
-        self.running = true;
+    fn _run(&mut self, max_turn_count: u32) {
+        self._running = true;
 
         for _ in 0..max_turn_count {
             if !self.turn() {
@@ -218,6 +227,7 @@ impl EventLoop {
         }
     }
 
+    /// Runs the event loop for a single step.
     fn turn(&self) -> bool {
 
         let event_handle = match self.events.borrow()[self.head.0].next {
@@ -251,12 +261,13 @@ impl EventLoop {
     }
 }
 
-/// A callback which can be used to fulfill a promise.
+/// A callback that can be used to fulfill or reject a promise.
 pub trait PromiseFulfiller<T> where T: 'static {
     fn fulfill(self: Box<Self>, value: T);
     fn reject(self: Box<Self>, error: Error);
 }
 
+/// Creates a new promise/fulfiller pair.
 pub fn new_promise_and_fulfiller<T>() -> (Promise<T>, Box<PromiseFulfiller<T>>) where T: 'static {
     let result = ::std::rc::Rc::new(::std::cell::RefCell::new(PromiseAndFulfillerHub::new()));
     let result_promise : Promise<T> = Promise { node: Box::new(result.clone())};
@@ -264,7 +275,7 @@ pub fn new_promise_and_fulfiller<T>() -> (Promise<T>, Box<PromiseFulfiller<T>>) 
 }
 
 
-/// Holds a collection of Promise<()>s and ensures that each executes to completion.
+/// Holds a collection of `Promise<()>`s and ensures that each executes to completion.
 /// Destroying a TaskSet automatically cancels all of its unfinished promises.
 pub struct TaskSet {
     task_set_impl: Rc<RefCell<private::TaskSetImpl>>,
@@ -280,10 +291,12 @@ impl TaskSet {
     }
 }
 
+/// A callback to be invoked when a task in a `TaskSet` fails.
 pub trait ErrorHandler {
     fn task_failed(&mut self, error: Error);
 }
 
+/// Transforms a vector of promises into a promise for a vector.
 pub fn join_promises<T>(promises: Vec<Promise<T>>) -> Promise<Vec<T>> {
     let nodes = promises.into_iter().map(|p| { p.node }).collect();
     Promise { node: Box::new(private::promise_node::ArrayJoin::new(nodes)) }
