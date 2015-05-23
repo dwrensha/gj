@@ -41,7 +41,6 @@ fn accept_loop(receiver: gj::io::ConnectionReceiver,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
     return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
-        println!("handling connection");
         task_set.add(forward(src_rx, src_tx, vec![0; 1024]));
         return Ok(accept_loop(receiver, task_set));
     });
@@ -58,7 +57,7 @@ impl gj::ErrorHandler for Reporter {
 pub fn main() {
     let args : Vec<String> = ::std::env::args().collect();
     if args.len() != 2 {
-        println!("usage: {} ADDRESS[:PORT]", args[0]);
+        println!("usage: {} HOST:PORT", args[0]);
         return;
     }
 
