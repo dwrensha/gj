@@ -262,8 +262,37 @@ struct ExclusiveJoinState<T> {
 
 }
 
-pub struct ExclusiveJoin<T> {
+pub struct ExclusiveJoin<T> where T: 'static {
     state: Rc<RefCell<ExclusiveJoinState<T>>>,
+}
+
+impl<T> ExclusiveJoin<T> {
+    pub fn new(mut left: Box<PromiseNode<T>>, mut right: Box<PromiseNode<T>>) -> ExclusiveJoin<T> {
+
+        let state = Rc::new(RefCell::new(ExclusiveJoinState {
+            on_ready_event: OnReadyEvent::Empty,
+            left: None, right: None}));
+
+        {
+            let (handle, dropper) = EventHandle::new();
+            left.on_ready(handle);
+            handle.set(Box::new(ExclusiveJoinBranch { state: state.clone(),
+                                                      side: ExclusiveJoinSide::Left }));
+
+            state.borrow_mut().left = Some((left, dropper))
+        }
+
+        {
+            let (handle, dropper) = EventHandle::new();
+            right.on_ready(handle);
+            handle.set(Box::new(ExclusiveJoinBranch { state: state.clone(),
+                                                      side: ExclusiveJoinSide::Right }));
+
+            state.borrow_mut().right = Some((right, dropper))
+        }
+
+        return ExclusiveJoin { state: state };
+    }
 }
 
 impl <T> PromiseNode<T> for ExclusiveJoin<T> {
@@ -271,16 +300,19 @@ impl <T> PromiseNode<T> for ExclusiveJoin<T> {
         self.state.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<T> {
-        unimplemented!()
-/*
-        match self.state.borrow().left {
-            Some((node, dropper)) => {
+        let left = ::std::mem::replace(&mut self.state.borrow_mut().left, None);
+        let right = ::std::mem::replace(&mut self.state.borrow_mut().right, None);
 
+        match (left, right) {
+            (Some((node, _dropper)), None) => {
+                return node.get();
             }
-            None => {
-
+            (None, Some((node, _dropper))) => {
+                return node.get();
+            }
+            _ => {
+                unreachable!()
             }
         }
-        return Ok(result); */
     }
 }

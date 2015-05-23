@@ -68,6 +68,12 @@ impl <T> Promise <T> where T: 'static {
             Promise { node: Box::new(promise_node::Transform::new(self.node, func, error_handler)) }
         }
 
+    /// Returns a new promise that resolves when either `self` or `other` resolves. The promise that
+    /// doesn't resolve first is cancelled.
+    pub fn exclusive_join(self, other: Promise<T>) -> Promise<T> {
+        return Promise { node: Box::new(private::promise_node::ExclusiveJoin::new(self.node, other.node)) };
+    }
+
     /// Runs the event loop until the promise is fulfilled.
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
@@ -161,7 +167,12 @@ impl EventLoop {
             *maybe_event_loop.borrow_mut() = Some(event_loop);
         });
         let wait_scope = WaitScope(::std::marker::PhantomData );
+
         f(&wait_scope);
+
+        EVENT_LOOP.with(move |maybe_event_loop| {
+            *maybe_event_loop.borrow_mut() = None;
+        });
     }
 
     fn arm_depth_first(&self, event_handle: private::EventHandle) {

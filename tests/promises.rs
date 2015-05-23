@@ -281,3 +281,40 @@ fn array_join() {
         assert_eq!(result[2], 789);
     });
 }
+
+#[test]
+fn exclusive_join() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let left = gj::Promise::fulfilled(()).map(|()| {
+            return Ok(123);
+        });
+        let (right, _) = gj::new_promise_and_fulfiller::<u32>();
+        let result = left.exclusive_join(right).wait(wait_scope).unwrap();
+
+        assert_eq!(result, 123);
+    });
+
+    gj::EventLoop::top_level(|wait_scope| {
+        let (left, _) = gj::new_promise_and_fulfiller::<u32>();
+        let right = gj::Promise::fulfilled(()).map(|()| {
+            return Ok(456);
+        });
+
+        let result = left.exclusive_join(right).wait(wait_scope).unwrap();
+
+        assert_eq!(result, 456);
+    });
+
+    gj::EventLoop::top_level(|wait_scope| {
+        let left = gj::Promise::fulfilled(()).map(|()| {
+            return Ok(123);
+        });
+        let right = gj::Promise::fulfilled(()).map(|()| {
+            return Ok(456);
+        }); // need to eagerly evaluate?
+
+        let _result = left.exclusive_join(right).wait(wait_scope).unwrap();
+
+//        assert_eq!(result, 456);
+    });
+}
