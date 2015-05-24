@@ -58,7 +58,7 @@ fn parent_wait_loop() -> gj::Promise<()> {
 }
 
 pub fn main() {
-    gj::EventLoop::top_level(move |wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
 
         let children = vec![
             parent_wait_loop(),

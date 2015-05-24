@@ -4,9 +4,8 @@
 
 [Documentation here](http://docs.capnproto-rust.org/gj/index.html).
 
-*** This is a work in progress! It doesn't do much yet. ***
-
-GJ is a port of the [KJ concurrency framework](https://capnproto.org/cxxrpc.html#kj-concurrency-framework)
+GJ is a (work-in-progress) port of the
+[KJ concurrency framework](https://capnproto.org/cxxrpc.html#kj-concurrency-framework)
 into Rust.
 
 A GJ event loop allows you to register callbacks to be executed when nonblocking IO completes.
