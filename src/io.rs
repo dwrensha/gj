@@ -323,7 +323,7 @@ pub struct MioEventPort {
     reactor: ::mio::EventLoop<Handler>,
 }
 
-pub struct Handler {
+struct Handler {
     observers: HandleTable<FdObserver>,
 }
 
@@ -337,7 +337,7 @@ impl MioEventPort {
 }
 
 impl ::mio::Handler for Handler {
-    type Timeout = ();
+    type Timeout = Timeout;
     type Message = ();
     fn readable(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
                 token: ::mio::Token, _hint: ::mio::ReadHint) {
@@ -356,6 +356,9 @@ impl ::mio::Handler for Handler {
             None => (),
         }
     }
+    fn timeout(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, timeout: Timeout) {
+        timeout.fulfiller.fulfill(());
+    }
 }
 
 impl EventPort for MioEventPort {
@@ -368,4 +371,22 @@ impl EventPort for MioEventPort {
         self.reactor.run_once(&mut self.handler).unwrap();
         return false;
     }
+}
+
+pub struct Timer;
+
+impl Timer {
+    pub fn after_delay_ms(delay: u64) -> Promise<()> {
+        let (promise, fulfiller) = new_promise_and_fulfiller();
+        let timeout = Timeout { fulfiller: fulfiller };
+        with_current_event_loop(|event_loop| {
+            let _ = event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay);
+        });
+        return promise;
+        // XXX this is not cancellable.
+    }
+}
+
+struct Timeout {
+    fulfiller: Box<PromiseFulfiller<()>>,
 }

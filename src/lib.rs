@@ -153,7 +153,7 @@ trait EventPort {
 
     /// Called to notify the `EventPort` when the `EventLoop` has work to do; specifically when it
     /// transitions from empty -> runnable or runnable -> empty. This is typically useful when
-    /// intergrating with an external event loop; if the loop is currently runnable then you should
+    /// integrating with an external event loop; if the loop is currently runnable then you should
     /// arrange to call run() on it soon. The default implementation does nothing.
     fn set_runnable(&mut self, _runnable: bool) { }
 

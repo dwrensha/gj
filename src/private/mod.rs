@@ -192,13 +192,13 @@ pub struct PromiseAndFulfillerHub<T> where T: 'static {
     on_ready_event: OnReadyEvent,
 }
 
-impl <T> PromiseAndFulfillerHub<T> where T: 'static {
+impl <T> PromiseAndFulfillerHub<T> {
     pub fn new() -> PromiseAndFulfillerHub<T> {
         PromiseAndFulfillerHub { result: None::<Result<T>>, on_ready_event: OnReadyEvent::Empty }
     }
 }
 
-impl <T> PromiseAndFulfillerHub<T> where T: 'static {
+impl <T> PromiseAndFulfillerHub<T> {
     fn fulfill(&mut self, value: T) {
         if self.result.is_none() {
             self.result = Some(Ok(value));
@@ -219,7 +219,7 @@ pub struct WrapperPromiseNode<T> where T: 'static {
 }
 */
 
-impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
+impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> {
     fn on_ready(&mut self, event: EventHandle) {
         self.borrow_mut().on_ready_event.init(event);
     }
