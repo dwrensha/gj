@@ -108,29 +108,31 @@ impl NetworkAddress {
     }
 
     pub fn connect(self) -> Promise<(AsyncOutputStream, AsyncInputStream)> {
-        let socket = ::mio::tcp::TcpSocket::v4().unwrap();
-        let handle = FdObserver::new();
-        let token = ::mio::Token(handle.val);
-        let (stream, _) = socket.connect(&self.address).unwrap();
-        with_current_event_loop(move |event_loop| {
-            event_loop.event_port.borrow_mut().reactor.register_opt(&stream, token,
-                                                                    ::mio::Interest::writable(),
-                                                                    ::mio::PollOpt::edge()).unwrap();
-            let promise =
-                event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
-            return promise.map(move |()| {
-                // TODO check for error.
+        return Promise::fulfilled(()).then(move |()| {
+            let socket = try!(::mio::tcp::TcpSocket::v4());
+            let handle = FdObserver::new();
+            let token = ::mio::Token(handle.val);
+            let (stream, _) = try!(socket.connect(&self.address));
+            with_current_event_loop(move |event_loop| {
+                try!(event_loop.event_port.borrow_mut().reactor.register_opt(&stream, token,
+                                                                             ::mio::Interest::writable(),
+                                                                             ::mio::PollOpt::edge()));
+                let promise =
+                    event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
+                return Ok(promise.map(move |()| {
+                    // TODO check for error.
 
-                return with_current_event_loop(move |event_loop| {
-                    try!(event_loop.event_port.borrow_mut().reactor.reregister(
-                        &stream, token,
-                        ::mio::Interest::writable() | ::mio::Interest::readable(),
-                        ::mio::PollOpt::edge()));
-                    return Ok(AsyncIo::new(stream, handle));
-                });
+                    return with_current_event_loop(move |event_loop| {
+                        try!(event_loop.event_port.borrow_mut().reactor.reregister(
+                            &stream, token,
+                            ::mio::Interest::writable() | ::mio::Interest::readable(),
+                            ::mio::PollOpt::edge()));
+                        return Ok(AsyncIo::new(stream, handle));
+                    });
 
-            });
-        })
+                }));
+            })
+        });
     }
 }
 
