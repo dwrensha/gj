@@ -23,7 +23,7 @@
 
 use std::ops::{DerefMut, Deref};
 use handle_table::{HandleTable, Handle};
-use {EventPort, Promise, PromiseFulfiller, Result, WaitScope, new_promise_and_fulfiller};
+use {EventLoop, EventPort, Promise, PromiseFulfiller, Result, WaitScope, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
 
@@ -76,6 +76,20 @@ impl <T> Deref for Slice<T> where T: Deref<Target=[u8]> {
     }
 }
 
+fn register_new_handle<E>(evented: &E) -> Result<Handle> where E: ::mio::Evented {
+    let handle = FdObserver::new();
+    let token = ::mio::Token(handle.val);
+    return with_current_event_loop(move |event_loop| {
+        try!(event_loop.event_port.borrow_mut().reactor.register_opt(evented, token,
+                                                                     ::mio::Interest::writable() |
+                                                                     ::mio::Interest::readable(),
+                                                                     ::mio::PollOpt::edge()));
+        // XXX if this fails, the handle does not get cleanedup.
+
+        return Ok(handle);
+    });
+}
+
 #[derive(Copy, Clone)]
 pub struct NetworkAddress {
     address: ::std::net::SocketAddr,
@@ -108,21 +122,17 @@ impl NetworkAddress {
     pub fn connect(self) -> Promise<TcpStream> {
         return Promise::fulfilled(()).then(move |()| {
             let socket = try!(::mio::tcp::TcpSocket::v4());
-            let handle = FdObserver::new();
-            let token = ::mio::Token(handle.val);
             let (stream, connected) = try!(socket.connect(&self.address));
-            with_current_event_loop(move |event_loop| {
-                try!(event_loop.event_port.borrow_mut().reactor.register_opt(&stream, token,
-                                                                             ::mio::Interest::writable() |
-                                                                             ::mio::Interest::readable(),
-                                                                             ::mio::PollOpt::edge()));
 
-                // TODO: if we're not already connected, maybe only register writable interest,
-                // and then reregister with read/write interested once we successfully connect.
+            // TODO: if we're not already connected, maybe only register writable interest,
+            // and then reregister with read/write interested once we successfully connect.
 
-                if connected {
-                    return Ok(Promise::fulfilled(TcpStream::new(stream, handle)));
-                } else {
+            let handle = try!(register_new_handle(&stream));
+
+            if connected {
+                return Ok(Promise::fulfilled(TcpStream::new(stream, handle)));
+            } else {
+                return with_current_event_loop(move |event_loop| {
                     let promise =
                         event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
 
@@ -130,8 +140,8 @@ impl NetworkAddress {
                         // TODO check for error.
                         return Ok(TcpStream::new(stream, handle));
                     }));
-                }
-            })
+                });
+            }
         });
     }
 }
@@ -154,14 +164,8 @@ impl ConnectionReceiver {
         let accept_result = try!(self.listener.accept());
         match accept_result {
             Some(stream) => {
-                let handle = FdObserver::new();
-                return with_current_event_loop(move |event_loop| {
-                    try!(event_loop.event_port.borrow_mut().reactor.register_opt(
-                        &stream, ::mio::Token(handle.val),
-                        ::mio::Interest::writable() | ::mio::Interest::readable(),
-                        ::mio::PollOpt::edge()));
-                    return Ok(Promise::fulfilled((self, TcpStream::new(stream, handle))));
-                });
+                let handle = try!(register_new_handle(&stream));
+                return Ok(Promise::fulfilled((self, TcpStream::new(stream, handle))));
             }
             None => {
                 return with_current_event_loop(move |event_loop| {
@@ -185,7 +189,7 @@ pub struct TcpStream {
     stream: ::mio::tcp::TcpStream,
     handle: Handle,
 }
-/*
+
 impl ::mio::TryRead for TcpStream {
     fn read_slice(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryRead;
@@ -199,7 +203,15 @@ impl ::mio::TryWrite for TcpStream {
         self.stream.write_slice(buf)
     }
 }
-*/
+
+trait HasHandle {
+    fn get_handle(&self) -> Handle;
+}
+
+impl HasHandle for TcpStream {
+    fn get_handle(&self) -> Handle { self.handle }
+}
+
 
 impl Drop for TcpStream {
     fn drop(&mut self) {
@@ -217,83 +229,81 @@ impl TcpStream {
 
     pub fn try_clone(&self) -> Result<TcpStream> {
         let stream = try!(self.stream.try_clone());
-        let handle = FdObserver::new();
-        return with_current_event_loop(move |event_loop| {
-            try!(event_loop.event_port.borrow_mut().reactor.register_opt(
-                &stream, ::mio::Token(handle.val),
-                ::mio::Interest::writable() | ::mio::Interest::readable(),
-                ::mio::PollOpt::edge()));
-            return Ok(TcpStream::new(stream, handle));
-        });
+        let handle = try!(register_new_handle(&stream));
+        return Ok(TcpStream::new(stream, handle));
     }
 }
 
-impl TcpStream {
-    fn try_read_internal<T>(mut self,
-                            mut buf: T,
-                            mut already_read: usize,
-                            min_bytes: usize) -> Result<Promise<(Self, T, usize)>> where T: DerefMut<Target=[u8]> {
-        use mio::TryRead;
 
-        while already_read < min_bytes {
-            let read_result = try!(self.stream.read_slice(&mut buf[already_read..]));
-            match read_result {
-                Some(0) => {
-                    // EOF
-                    return Ok(Promise::fulfilled((self, buf, already_read)));
-                }
-                Some(n) => {
-                    already_read += n;
-                }
-                None => { // would block
-                    return with_current_event_loop(move |event_loop| {
-                        let promise =
-                            event_loop.event_port.borrow_mut()
-                            .handler.observers[self.handle].when_becomes_readable();
-                        return Ok(promise.then(move |()| {
-                            return self.try_read_internal(buf, already_read, min_bytes);
-                        }));
-                    });
-                }
+fn try_read_internal<R, T>(mut reader: R,
+                           mut buf: T,
+                           mut already_read: usize,
+                           min_bytes: usize) -> Result<Promise<(R, T, usize)>>
+    where T: DerefMut<Target=[u8]>, R: ::mio::TryRead + HasHandle
+{
+    use mio::TryRead;
+
+    while already_read < min_bytes {
+        let read_result = try!(reader.read_slice(&mut buf[already_read..]));
+        match read_result {
+            Some(0) => {
+                // EOF
+                return Ok(Promise::fulfilled((reader, buf, already_read)));
+            }
+            Some(n) => {
+                already_read += n;
+            }
+            None => { // would block
+                return with_current_event_loop(move |event_loop| {
+                    let promise =
+                        event_loop.event_port.borrow_mut()
+                        .handler.observers[reader.get_handle()].when_becomes_readable();
+                    return Ok(promise.then(move |()| {
+                        return try_read_internal(reader, buf, already_read, min_bytes);
+                    }));
+                });
             }
         }
-
-        return Ok(Promise::fulfilled((self, buf, already_read)));
     }
 
-    fn write_internal<T>(mut self,
-                         buf: T,
-                         mut already_written: usize) -> Result<Promise<(Self, T)>> where T: Deref<Target=[u8]> {
-        use mio::TryWrite;
-
-        while already_written < buf.len() {
-            let write_result = try!(self.stream.write_slice(&buf[already_written..]));
-            match write_result {
-                Some(n) => {
-                    already_written += n;
-                }
-                None => { // would block
-                    return with_current_event_loop(move |event_loop| {
-                        let promise =
-                            event_loop.event_port.borrow_mut()
-                            .handler.observers[self.handle].when_becomes_writable();
-                        return Ok(promise.then(move |()| {
-                            return self.write_internal(buf, already_written);
-                        }));
-                    });
-                }
-            }
-        }
-
-        return Ok(Promise::fulfilled((self, buf)));
-    }
+    return Ok(Promise::fulfilled((reader, buf, already_read)));
 }
+
+fn write_internal<W, T>(mut writer: W,
+                        buf: T,
+                        mut already_written: usize) -> Result<Promise<(W, T)>>
+    where T: Deref<Target=[u8]>, W: ::mio::TryWrite + HasHandle
+{
+    use mio::TryWrite;
+
+    while already_written < buf.len() {
+        let write_result = try!(writer.write_slice(&buf[already_written..]));
+        match write_result {
+            Some(n) => {
+                already_written += n;
+            }
+            None => { // would block
+                return with_current_event_loop(move |event_loop| {
+                    let promise =
+                        event_loop.event_port.borrow_mut()
+                        .handler.observers[writer.get_handle()].when_becomes_writable();
+                    return Ok(promise.then(move |()| {
+                        return write_internal(writer, buf, already_written);
+                    }));
+                });
+            }
+        }
+    }
+
+    return Ok(Promise::fulfilled((writer, buf)));
+}
+
 
 impl AsyncRead for TcpStream {
     fn try_read<T>(self, buf: T,
                min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
-            return self.try_read_internal(buf, 0, min_bytes);
+            return try_read_internal(self, buf, 0, min_bytes);
         });
     }
 }
@@ -301,7 +311,7 @@ impl AsyncRead for TcpStream {
 impl AsyncWrite for TcpStream {
     fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
-            return self.write_internal(buf, 0);
+            return write_internal(self, buf, 0);
         });
     }
 }
@@ -429,18 +439,37 @@ struct Timeout {
     fulfiller: Box<PromiseFulfiller<()>>,
 }
 
-#[allow(dead_code)]
-struct SocketStream {
-    io: ::mio::Io,
+pub struct SocketStream {
+    stream: ::mio::Io,
+    handle: Handle,
 }
 
-pub fn new_pipe_thread<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, ())>
-    where F: FnOnce(&WaitScope),
+impl ::mio::TryRead for SocketStream {
+    fn read_slice(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
+        use mio::TryRead;
+        self.stream.read_slice(buf)
+    }
+}
+
+impl ::mio::TryWrite for SocketStream {
+    fn write_slice(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
+        use mio::TryWrite;
+        self.stream.write_slice(buf)
+    }
+}
+
+impl HasHandle for SocketStream {
+    fn get_handle(&self) -> Handle { self.handle }
+}
+
+
+pub fn new_pipe_thread<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, SocketStream)>
+    where F: FnOnce(SocketStream, &WaitScope),
           F: Send + 'static
 {
     use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};
 
-    let (_fd0, _fd1) =
+    let (fd0, fd1) =
         // eh... the trait `std::error::Error` is not implemented for the type `nix::Error`
         match socketpair(AddressFamily::Unix, SockType::Stream, 0, SOCK_NONBLOCK | SOCK_CLOEXEC) {
             Ok(v) => v,
@@ -450,10 +479,21 @@ pub fn new_pipe_thread<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()
             }
         };
 
+    let io = ::mio::Io::from_raw_fd(fd0);
+    let handle = try!(register_new_handle(&io));
+    let socket_stream = SocketStream { stream: io, handle: handle };
+
     let join_handle = ::std::thread::spawn(move || {
-        let wait_scope = WaitScope(::std::marker::PhantomData );
-        start_func(&wait_scope);
+        EventLoop::top_level(move |wait_scope| {
+            let io = ::mio::Io::from_raw_fd(fd1);
+            let handle = match register_new_handle(&io) {
+                Ok(v) => v,
+                Err(_) => panic!(),
+            };
+            let socket_stream = SocketStream { stream: io, handle: handle };
+            start_func(socket_stream, &wait_scope);
+        });
     });
 
-    return Ok((join_handle, ()));
+    return Ok((join_handle, socket_stream));
 }
