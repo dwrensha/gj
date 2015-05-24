@@ -110,25 +110,27 @@ impl NetworkAddress {
             let socket = try!(::mio::tcp::TcpSocket::v4());
             let handle = FdObserver::new();
             let token = ::mio::Token(handle.val);
-            let (stream, _) = try!(socket.connect(&self.address));
+            let (stream, connected) = try!(socket.connect(&self.address));
             with_current_event_loop(move |event_loop| {
                 try!(event_loop.event_port.borrow_mut().reactor.register_opt(&stream, token,
-                                                                             ::mio::Interest::writable(),
+                                                                             ::mio::Interest::writable() |
+                                                                             ::mio::Interest::readable(),
                                                                              ::mio::PollOpt::edge()));
-                let promise =
-                    event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
-                return Ok(promise.map(move |()| {
-                    // TODO check for error.
 
-                    return with_current_event_loop(move |event_loop| {
-                        try!(event_loop.event_port.borrow_mut().reactor.reregister(
-                            &stream, token,
-                            ::mio::Interest::writable() | ::mio::Interest::readable(),
-                            ::mio::PollOpt::edge()));
+                // TODO: if we're not already connected, maybe only register writable interest,
+                // and then reregister with read/write interested once we successfully connect.
+
+                if connected {
+                    return Ok(Promise::fulfilled(TcpStream::new(stream, handle)));
+                } else {
+                    let promise =
+                        event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
+
+                    return Ok(promise.map(move |()| {
+                        // TODO check for error.
                         return Ok(TcpStream::new(stream, handle));
-                    });
-
-                }));
+                    }));
+                }
             })
         });
     }
