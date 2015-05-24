@@ -22,16 +22,16 @@
 extern crate gj;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
-    where R: AsyncRead, W: AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
+fn echo<S,B>(stream: S, buf: B) -> gj::Promise<()>
+    where S: AsyncRead + AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
 {
-    return src.try_read(buf, 1).then(move |(src, buf, n)| {
+    return stream.try_read(buf, 1).then(move |(stream, buf, n)| {
         if n == 0 {
             // EOF
             return Ok(gj::Promise::fulfilled(()));
         } else {
-            return Ok(dst.write(gj::io::Slice::new(buf, n)).then(move |(dst, slice)| {
-                return Ok(forward(src, dst, slice.buf));
+            return Ok(stream.write(gj::io::Slice::new(buf, n)).then(move |(stream, slice)| {
+                return Ok(echo(stream, slice.buf));
             }));
         }
     });
@@ -40,8 +40,8 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
 fn accept_loop(receiver: gj::io::ConnectionReceiver,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
-    return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
-        task_set.add(forward(src_rx, src_tx, vec![0; 1024]));
+    return receiver.accept().then(move |(receiver, stream)| {
+        task_set.add(echo(stream, vec![0; 1024]));
         return Ok(accept_loop(receiver, task_set));
     });
 }

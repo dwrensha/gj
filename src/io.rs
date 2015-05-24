@@ -21,8 +21,6 @@
 
 //! Asynchronous input and output.
 
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::ops::{DerefMut, Deref};
 use handle_table::{HandleTable, Handle};
 use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
@@ -107,7 +105,7 @@ impl NetworkAddress {
         });
     }
 
-    pub fn connect(self) -> Promise<(AsyncOutputStream, AsyncInputStream)> {
+    pub fn connect(self) -> Promise<TcpStream> {
         return Promise::fulfilled(()).then(move |()| {
             let socket = try!(::mio::tcp::TcpSocket::v4());
             let handle = FdObserver::new();
@@ -127,7 +125,7 @@ impl NetworkAddress {
                             &stream, token,
                             ::mio::Interest::writable() | ::mio::Interest::readable(),
                             ::mio::PollOpt::edge()));
-                        return Ok(AsyncIo::new(stream, handle));
+                        return Ok(TcpStream::new(stream, handle));
                     });
 
                 }));
@@ -150,7 +148,7 @@ impl Drop for ConnectionReceiver {
 
 impl ConnectionReceiver {
 
-    fn accept_internal(self) -> Result<Promise<(ConnectionReceiver, (AsyncOutputStream, AsyncInputStream))>> {
+    fn accept_internal(self) -> Result<Promise<(ConnectionReceiver, TcpStream)>> {
         let accept_result = try!(self.listener.accept());
         match accept_result {
             Some(stream) => {
@@ -160,7 +158,7 @@ impl ConnectionReceiver {
                         &stream, ::mio::Token(handle.val),
                         ::mio::Interest::writable() | ::mio::Interest::readable(),
                         ::mio::PollOpt::edge()));
-                    return Ok(Promise::fulfilled((self, AsyncIo::new(stream, handle))));
+                    return Ok(Promise::fulfilled((self, TcpStream::new(stream, handle))));
                 });
             }
             None => {
@@ -176,25 +174,17 @@ impl ConnectionReceiver {
     }
 
 
-    pub fn accept(self) -> Promise<(ConnectionReceiver, (AsyncOutputStream, AsyncInputStream))> {
+    pub fn accept(self) -> Promise<(ConnectionReceiver, TcpStream)> {
         return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
     }
 }
 
-pub struct AsyncInputStream {
-    hub: Rc<RefCell<AsyncIo>>
-}
-
-pub struct AsyncOutputStream {
-    hub: Rc<RefCell<AsyncIo>>
-}
-
-struct AsyncIo {
+pub struct TcpStream {
     stream: ::mio::tcp::TcpStream,
     handle: Handle,
 }
 
-impl Drop for AsyncIo {
+impl Drop for TcpStream {
     fn drop(&mut self) {
         return with_current_event_loop(move |event_loop| {
             event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
@@ -203,23 +193,33 @@ impl Drop for AsyncIo {
     }
 }
 
-impl AsyncIo {
-    fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> (AsyncOutputStream, AsyncInputStream) {
-        let hub = Rc::new(RefCell::new(AsyncIo { stream: stream, handle: handle }));
+impl TcpStream {
+    fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> TcpStream {
+        TcpStream { stream: stream, handle: handle }
+    }
 
-        (AsyncOutputStream { hub: hub.clone() }, AsyncInputStream { hub: hub } )
+    pub fn try_clone(&self) -> Result<TcpStream> {
+        let stream = try!(self.stream.try_clone());
+        let handle = FdObserver::new();
+        return with_current_event_loop(move |event_loop| {
+            try!(event_loop.event_port.borrow_mut().reactor.register_opt(
+                &stream, ::mio::Token(handle.val),
+                ::mio::Interest::writable() | ::mio::Interest::readable(),
+                ::mio::PollOpt::edge()));
+            return Ok(TcpStream::new(stream, handle));
+        });
     }
 }
 
-impl AsyncInputStream {
-    fn try_read_internal<T>(self,
+impl TcpStream {
+    fn try_read_internal<T>(mut self,
                             mut buf: T,
                             mut already_read: usize,
                             min_bytes: usize) -> Result<Promise<(Self, T, usize)>> where T: DerefMut<Target=[u8]> {
         use mio::TryRead;
 
         while already_read < min_bytes {
-            let read_result = try!(self.hub.borrow_mut().stream.read_slice(&mut buf[already_read..]));
+            let read_result = try!(self.stream.read_slice(&mut buf[already_read..]));
             match read_result {
                 Some(0) => {
                     // EOF
@@ -232,7 +232,7 @@ impl AsyncInputStream {
                     return with_current_event_loop(move |event_loop| {
                         let promise =
                             event_loop.event_port.borrow_mut()
-                            .handler.observers[self.hub.borrow().handle].when_becomes_readable();
+                            .handler.observers[self.handle].when_becomes_readable();
                         return Ok(promise.then(move |()| {
                             return self.try_read_internal(buf, already_read, min_bytes);
                         }));
@@ -243,16 +243,14 @@ impl AsyncInputStream {
 
         return Ok(Promise::fulfilled((self, buf, already_read)));
     }
-}
 
-impl AsyncOutputStream {
-    fn write_internal<T>(self,
+    fn write_internal<T>(mut self,
                          buf: T,
                          mut already_written: usize) -> Result<Promise<(Self, T)>> where T: Deref<Target=[u8]> {
         use mio::TryWrite;
 
         while already_written < buf.len() {
-            let write_result = try!(self.hub.borrow_mut().stream.write_slice(&buf[already_written..]));
+            let write_result = try!(self.stream.write_slice(&buf[already_written..]));
             match write_result {
                 Some(n) => {
                     already_written += n;
@@ -261,7 +259,7 @@ impl AsyncOutputStream {
                     return with_current_event_loop(move |event_loop| {
                         let promise =
                             event_loop.event_port.borrow_mut()
-                            .handler.observers[self.hub.borrow().handle].when_becomes_writable();
+                            .handler.observers[self.handle].when_becomes_writable();
                         return Ok(promise.then(move |()| {
                             return self.write_internal(buf, already_written);
                         }));
@@ -274,7 +272,7 @@ impl AsyncOutputStream {
     }
 }
 
-impl AsyncRead for AsyncInputStream {
+impl AsyncRead for TcpStream {
     fn try_read<T>(self, buf: T,
                min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
@@ -283,7 +281,7 @@ impl AsyncRead for AsyncInputStream {
     }
 }
 
-impl AsyncWrite for AsyncOutputStream {
+impl AsyncWrite for TcpStream {
     fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
             return self.write_internal(buf, 0);

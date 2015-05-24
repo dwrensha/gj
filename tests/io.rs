@@ -30,12 +30,12 @@ fn hello() {
 
         let receiver = addr.listen().unwrap();
 
-        let _write_promise = receiver.accept().then(move |(_, (tx, _rx))| {
-            return Ok(tx.write(vec![0,1,2,3,4,5]));
+        let _write_promise = receiver.accept().then(move |(_, stream)| {
+            return Ok(stream.write(vec![0,1,2,3,4,5]));
         });
 
-        let read_promise = addr.connect().then(move |(_tx, rx)| {
-            return Ok(rx.read(vec![0u8; 6], 6));
+        let read_promise = addr.connect().then(move |stream| {
+            return Ok(stream.read(vec![0u8; 6], 6));
         });
 
         let (_, buf, _) = read_promise.wait(wait_scope).unwrap();
@@ -53,19 +53,19 @@ fn echo() {
         let addr = gj::io::NetworkAddress::new("127.0.0.1:10001").unwrap();
         let receiver = addr.listen().unwrap();
 
-        let _server_promise = receiver.accept().then(move |(_, (tx, rx))| {
-            return Ok(rx.read(vec![0u8; 6], 6).then(move |(_rx, mut v, _)| {
+        let _server_promise = receiver.accept().then(move |(_, stream)| {
+            return Ok(stream.read(vec![0u8; 6], 6).then(move |(stream, mut v, _)| {
                 assert_eq!(&v[..], [7,6,5,4,3,2]);
                 for x in &mut v {
                     *x += 1;
                 }
-                return Ok(tx.write(v));
+                return Ok(stream.write(v));
             }));
         });
 
-        let client_promise = addr.connect().then(move |(tx, rx)| {
-            return Ok(tx.write(vec![7,6,5,4,3,2]).then(move |(_tx, v)| {
-                return Ok(rx.read(v, 6));
+        let client_promise = addr.connect().then(move |stream| {
+            return Ok(stream.write(vec![7,6,5,4,3,2]).then(move |(stream, v)| {
+                return Ok(stream.read(v, 6));
             }));
         });
 

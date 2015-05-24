@@ -41,13 +41,15 @@ fn accept_loop(receiver: gj::io::ConnectionReceiver,
                outbound_addr: gj::io::NetworkAddress,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
-    return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
+    return receiver.accept().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
         return Ok(gj::io::Timer.timeout_after_ms(1000, outbound_addr.connect())
-                .then_else(move |(dst_tx, dst_rx)| {
-                    task_set.add(forward(src_rx, dst_tx, vec![0; 1024]));
-                    task_set.add(forward(dst_rx, src_tx, vec![0; 1024]));
+                .then_else(move |dst_stream| {
+                    task_set.add(forward(try!(src_stream.try_clone()),
+                                         try!(dst_stream.try_clone()),
+                                         vec![0; 1024]));
+                    task_set.add(forward(dst_stream, src_stream, vec![0; 1024]));
                     return Ok(accept_loop(receiver, outbound_addr, task_set));
                 }, |e| {
                     println!("failed to connect: {}", e);
