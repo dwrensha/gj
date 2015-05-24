@@ -80,15 +80,8 @@ pub fn main() {
 
         let outbound_addr = gj::io::NetworkAddress::new(&*args[2]).unwrap();
 
-        let result = accept_loop(receiver,
-                                 outbound_addr,
-                                 gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
-
-        match result {
-            Ok(_) => {}
-            Err(e) => {
-                println!("error: {}", e);
-            }
-        }
-    });
+        return accept_loop(receiver,
+                           outbound_addr,
+                           gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
+    }).unwrap();
 }

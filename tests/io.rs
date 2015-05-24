@@ -41,7 +41,8 @@ fn hello() {
         let (_, buf, _) = read_promise.wait(wait_scope).unwrap();
 
         assert_eq!(&buf[..], [0,1,2,3,4,5]);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 
@@ -71,5 +72,6 @@ fn echo() {
 
         let (_, buf, _) = client_promise.wait(wait_scope).unwrap();
         assert_eq!(&buf[..], [8,7,6,5,4,3]);
-    });
+        Ok(())
+    }).unwrap();
 }

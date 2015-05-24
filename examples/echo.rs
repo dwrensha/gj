@@ -62,10 +62,10 @@ pub fn main() {
     }
 
     gj::EventLoop::top_level(move |wait_scope| {
-        let addr = gj::io::NetworkAddress::new(&*args[1]).unwrap();
-        let receiver = addr.listen().unwrap();
+        let addr = try!(gj::io::NetworkAddress::new(&*args[1]));
+        let receiver = try!(addr.listen());
 
-        accept_loop(receiver,
-                    gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope).unwrap();
-    });
+        return accept_loop(receiver,
+                           gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
+    }).unwrap();
 }

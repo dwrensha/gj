@@ -35,7 +35,8 @@ fn eval_void() {
         assert_eq!(done.get(), false);
         promise.wait(wait_scope).unwrap();
         assert_eq!(done.get(), true);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -47,7 +48,8 @@ fn eval_int() {
         });
         let value = promise.wait(wait_scope).unwrap();
         assert_eq!(value, 21);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 
@@ -63,7 +65,8 @@ fn fulfiller() {
         fulfiller.fulfill(10);
         let value = p1.wait(wait_scope).unwrap();
         assert_eq!(value, 11);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -81,7 +84,8 @@ fn chain() {
 
         let value = promise3.wait(wait_scope).unwrap();
         assert_eq!(444, value);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -100,7 +104,8 @@ fn chain_error() {
         });
 
         assert!(promise3.wait(wait_scope).is_err());
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -118,7 +123,8 @@ fn deep_chain2() {
         let value = promise.wait(wait_scope).unwrap();
 
         assert_eq!(value, 4);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -134,7 +140,8 @@ fn separate_fulfiller_chained() {
         let value = promise.wait(wait_scope).unwrap()
             .wait(wait_scope).unwrap(); // KJ gets away with only one wait() here.
         assert_eq!(value, 123);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -222,7 +229,8 @@ fn ordering() {
         }
 
         assert_eq!(counter.get(), 7);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 
@@ -262,7 +270,8 @@ fn task_set() {
         gj::Promise::fulfilled(()).map(|()| { return Ok(()) } ).wait(wait_scope).unwrap();
 
         assert_eq!(error_count.get(), 1);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -279,7 +288,8 @@ fn array_join() {
         assert_eq!(result[0], 123);
         assert_eq!(result[1], 456);
         assert_eq!(result[2], 789);
-    });
+        Ok(())
+    }).unwrap();
 }
 
 #[test]
@@ -292,7 +302,8 @@ fn exclusive_join() {
         let result = left.exclusive_join(right).wait(wait_scope).unwrap();
 
         assert_eq!(result, 123);
-    });
+        Ok(())
+    }).unwrap();
 
     gj::EventLoop::top_level(|wait_scope| {
         let (left, _) = gj::new_promise_and_fulfiller::<u32>();
@@ -303,7 +314,8 @@ fn exclusive_join() {
         let result = left.exclusive_join(right).wait(wait_scope).unwrap();
 
         assert_eq!(result, 456);
-    });
+        Ok(())
+    }).unwrap();
 
     gj::EventLoop::top_level(|wait_scope| {
         let left = gj::Promise::fulfilled(()).map(|()| {
@@ -316,5 +328,6 @@ fn exclusive_join() {
         let _result = left.exclusive_join(right).wait(wait_scope).unwrap();
 
 //        assert_eq!(result, 456);
-    });
+        Ok(())
+    }).unwrap();
 }

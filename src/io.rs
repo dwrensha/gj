@@ -484,14 +484,12 @@ pub fn new_pipe_thread<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()
     let socket_stream = SocketStream { stream: io, handle: handle };
 
     let join_handle = ::std::thread::spawn(move || {
-        EventLoop::top_level(move |wait_scope| {
+        let _result = EventLoop::top_level(move |wait_scope| {
             let io = ::mio::Io::from_raw_fd(fd1);
-            let handle = match register_new_handle(&io) {
-                Ok(v) => v,
-                Err(_) => panic!(),
-            };
+            let handle = try!(register_new_handle(&io));
             let socket_stream = SocketStream { stream: io, handle: handle };
             start_func(socket_stream, &wait_scope);
+            Ok(())
         });
     });
 

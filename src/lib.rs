@@ -179,7 +179,9 @@ pub struct EventLoop {
 impl EventLoop {
     /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
     /// closure and then drops the event loop.
-    pub fn top_level<F>(main: F) where F: FnOnce(&WaitScope) {
+    pub fn top_level<F>(main: F) -> Result<()>
+        where F: FnOnce(&WaitScope) -> Result<()>
+    {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
         let dummy = private::EventNode { event: None, next: None, prev: None };
         let head_handle = private::EventHandle(events.push(dummy));
@@ -200,11 +202,13 @@ impl EventLoop {
         });
         let wait_scope = WaitScope(::std::marker::PhantomData );
 
-        main(&wait_scope);
+        let result = main(&wait_scope);
 
         EVENT_LOOP.with(move |maybe_event_loop| {
             *maybe_event_loop.borrow_mut() = None;
         });
+
+        return result;
     }
 
     fn arm_depth_first(&self, event_handle: private::EventHandle) {
