@@ -23,7 +23,7 @@
 
 use std::ops::{DerefMut, Deref};
 use handle_table::{HandleTable, Handle};
-use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
+use {EventPort, Promise, PromiseFulfiller, Result, WaitScope, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
 
@@ -185,6 +185,21 @@ pub struct TcpStream {
     stream: ::mio::tcp::TcpStream,
     handle: Handle,
 }
+/*
+impl ::mio::TryRead for TcpStream {
+    fn read_slice(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
+        use mio::TryRead;
+        self.stream.read_slice(buf)
+    }
+}
+
+impl ::mio::TryWrite for TcpStream {
+    fn write_slice(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
+        use mio::TryWrite;
+        self.stream.write_slice(buf)
+    }
+}
+*/
 
 impl Drop for TcpStream {
     fn drop(&mut self) {
@@ -412,4 +427,33 @@ impl Drop for TimeoutDropper {
 
 struct Timeout {
     fulfiller: Box<PromiseFulfiller<()>>,
+}
+
+#[allow(dead_code)]
+struct SocketStream {
+    io: ::mio::Io,
+}
+
+pub fn new_pipe_thread<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, ())>
+    where F: FnOnce(&WaitScope),
+          F: Send + 'static
+{
+    use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};
+
+    let (_fd0, _fd1) =
+        // eh... the trait `std::error::Error` is not implemented for the type `nix::Error`
+        match socketpair(AddressFamily::Unix, SockType::Stream, 0, SOCK_NONBLOCK | SOCK_CLOEXEC) {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other,
+                                                          "failed to create socketpair")))
+            }
+        };
+
+    let join_handle = ::std::thread::spawn(move || {
+        let wait_scope = WaitScope(::std::marker::PhantomData );
+        start_func(&wait_scope);
+    });
+
+    return Ok((join_handle, ()));
 }

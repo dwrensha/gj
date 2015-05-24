@@ -25,6 +25,7 @@
 //! a basic building block.
 
 extern crate mio;
+extern crate nix;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

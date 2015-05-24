@@ -13,3 +13,6 @@ keywords = ["promise", "async", "io"]
 
 [dependencies.mio]
 git = "https://github.com/carllerche/mio"
+
+[dependencies.nix]
+git = "https://github.com/carllerche/nix-rust"
