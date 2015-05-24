@@ -22,17 +22,52 @@
 extern crate gj;
 use gj::io::{AsyncRead, AsyncWrite};
 
-pub fn main() {
-    let args : Vec<String> = ::std::env::args().collect();
-    if args.len() != 2 {
-        println!("usage: {} HOST:PORT", args[0]);
-        return;
-    }
+fn child_loop(delay: u32, stream: gj::io::SocketStream, buf: Vec<u8>) -> gj::Promise<()> {
 
-    gj::EventLoop::top_level(move |wait_scope| {
-        let addr = gj::io::NetworkAddress::new(&*args[1]).unwrap();
-        let _receiver = addr.listen().unwrap();
+    // This blocks the entire thread. This is okay because we are on a child thread
+    // where nothing else needs to happen.
+    ::std::thread::sleep_ms(delay);
 
-        unimplemented!();
+    return stream.write(buf).then(move |(stream, buf)| {
+        return Ok(child_loop(delay, stream, buf));
     });
+}
+
+fn child(delay: u32) -> gj::Result<gj::io::SocketStream> {
+    let (_, stream) = try!(gj::io::spawn(move |parent_stream, wait_scope| {
+        try!(child_loop(delay, parent_stream, vec![0u8]).wait(wait_scope));
+        Ok(())
+    }));
+    return Ok(stream);
+}
+
+fn listen_to_child(id: String, stream: gj::io::SocketStream, buf: Vec<u8>) -> gj::Promise<()> {
+    return stream.read(buf, 1).then(move |(stream, buf, _n)| {
+        println!("heard back from {}", id);
+        return Ok(listen_to_child(id, stream, buf));
+    });
+}
+
+fn parent_wait_loop() -> gj::Promise<()> {
+    println!("parent wait loop...");
+
+    // If we used ::std::thread::sleep_ms() here, we would block the main event loop.
+    return gj::io::Timer.after_delay_ms(3000).then(|()| {
+        return Ok(parent_wait_loop());
+    });
+}
+
+pub fn main() {
+    gj::EventLoop::top_level(move |wait_scope| {
+
+        let children = vec![
+            parent_wait_loop(),
+            listen_to_child("CHILD 1".to_string(), try!(child(700)), vec![0]),
+            listen_to_child("CHILD 2".to_string(), try!(child(1900)), vec![0]),
+            listen_to_child("CHILD 3".to_string(), try!(child(2600)), vec![0])];
+
+        try!(gj::join_promises(children).wait(wait_scope));
+
+        Ok(())
+    }).unwrap();
 }
