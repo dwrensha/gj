@@ -213,12 +213,6 @@ impl <T> PromiseAndFulfillerHub<T> {
     }
 }
 
-/*
-pub struct WrapperPromiseNode<T> where T: 'static {
-    hub: ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>>,
-}
-*/
-
 impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> {
     fn on_ready(&mut self, event: EventHandle) {
         self.borrow_mut().on_ready_event.init(event);

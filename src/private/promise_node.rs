@@ -316,3 +316,24 @@ impl <T> PromiseNode<T> for ExclusiveJoin<T> {
         }
     }
 }
+
+pub struct Wrapper<T, U> where T: 'static {
+    node: Box<PromiseNode<T>>,
+    inner: U,
+}
+
+impl <T, U> Wrapper<T, U> {
+    pub fn new(node: Box<PromiseNode<T>>, inner: U) -> Wrapper<T, U> {
+        Wrapper { node: node, inner: inner }
+    }
+}
+
+impl <T, U> PromiseNode<T> for Wrapper<T, U> {
+    fn on_ready(&mut self, event: EventHandle) {
+        self.node.on_ready(event);
+    }
+    fn get(self: Box<Self>) -> Result<T> {
+        self.node.get()
+    }
+}
+

@@ -376,14 +376,35 @@ impl EventPort for MioEventPort {
 pub struct Timer;
 
 impl Timer {
-    pub fn after_delay_ms(delay: u64) -> Promise<()> {
+    pub fn after_delay_ms(&self, delay: u64) -> Promise<()> {
         let (promise, fulfiller) = new_promise_and_fulfiller();
         let timeout = Timeout { fulfiller: fulfiller };
-        with_current_event_loop(|event_loop| {
-            let _ = event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay);
+        return with_current_event_loop(move |event_loop| {
+            let handle = event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay).unwrap();
+            return
+                Promise {
+                    node: Box::new(
+                        ::private::promise_node::Wrapper::new(promise.node,
+                                                              TimeoutDropper { handle: handle })) };
         });
-        return promise;
-        // XXX this is not cancellable.
+    }
+
+    pub fn timeout_after_ms<T>(&self, delay: u64, promise: Promise<T>) -> Promise<T> {
+        promise.exclusive_join(self.after_delay_ms(delay).map(|()| {
+            return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other, "operation timed out")))
+        }))
+    }
+}
+
+struct TimeoutDropper {
+    handle: ::mio::Timeout,
+}
+
+impl Drop for TimeoutDropper {
+    fn drop(&mut self) {
+        with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().reactor.clear_timeout(self.handle);
+        });
     }
 }
 

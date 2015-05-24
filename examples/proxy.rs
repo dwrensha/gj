@@ -44,11 +44,15 @@ fn accept_loop(receiver: gj::io::ConnectionReceiver,
     return receiver.accept().then(move |(receiver, (src_tx, src_rx))| {
         println!("handling connection");
 
-        return Ok(outbound_addr.connect().then(move |(dst_tx, dst_rx)| {
-            task_set.add(forward(src_rx, dst_tx, vec![0; 1024]));
-            task_set.add(forward(dst_rx, src_tx, vec![0; 1024]));
-            return Ok(accept_loop(receiver, outbound_addr, task_set));
-        }));
+        return Ok(gj::io::Timer.timeout_after_ms(1000, outbound_addr.connect())
+                .then_else(move |(dst_tx, dst_rx)| {
+                    task_set.add(forward(src_rx, dst_tx, vec![0; 1024]));
+                    task_set.add(forward(dst_rx, src_tx, vec![0; 1024]));
+                    return Ok(accept_loop(receiver, outbound_addr, task_set));
+                }, |e| {
+                    println!("failed to connect: {}", e);
+                    return Err(e);
+                }));
     });
 }
 
@@ -61,16 +65,28 @@ impl gj::ErrorHandler for Reporter {
 }
 
 pub fn main() {
+    let args : Vec<String> = ::std::env::args().collect();
+    if args.len() != 3 {
+        println!("usage: {} <LISTEN_ADDR> <CONNECT_ADDR>", args[0]);
+        return;
+    }
+
     gj::EventLoop::top_level(|wait_scope| {
 
-        let addr = gj::io::NetworkAddress::new("127.0.0.1:9999").unwrap();
+        let addr = gj::io::NetworkAddress::new(&*args[1]).unwrap();
         let receiver = addr.listen().unwrap();
 
-        // Hard coded to a google IP
-        let outbound_addr = gj::io::NetworkAddress::new("216.58.216.164:80").unwrap();
+        let outbound_addr = gj::io::NetworkAddress::new(&*args[2]).unwrap();
 
-        accept_loop(receiver,
-                    outbound_addr,
-                    gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope).unwrap();
+        let result = accept_loop(receiver,
+                                 outbound_addr,
+                                 gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
+
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                println!("error: {}", e);
+            }
+        }
     });
 }
