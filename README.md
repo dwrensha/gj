@@ -1,4 +1,4 @@
-# GJ - Good Job promise-based concurrency
+# Good Job, promise-based concurrency
 
 [![Build Status](https://travis-ci.org/dwrensha/gj.svg?branch=master)](https://travis-ci.org/dwrensha/gj)
 
