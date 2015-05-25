@@ -19,6 +19,16 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+
+//! Tasks scheduled on a GJ event loop are not preemptive. For an event loop to make progress,
+//! event callbacks must yield control by returning.
+//!
+//! GJ event loops are thread-local. To take advantage of multiprocessor hardware or to deal with
+//! tasks that cannot easily yield, you can send tasks to separate threads where they will execute
+//! on separate event loops. The example program illustrates how that might work, using
+//! `std::thread::sleep_ms()` as a stand-in for a blocking computation.
+
+
 extern crate gj;
 use gj::io::{AsyncRead, AsyncWrite};
 
