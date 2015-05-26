@@ -4,7 +4,9 @@
 
 [Documentation here](http://docs.capnproto-rust.org/gj/index.html).
 
-GJ is a (work-in-progress) port of the
+EXPERIMENTAL! UNSTABLE! A WORK IN PROGRESS!
+
+GJ is a port of the
 [KJ concurrency framework](https://capnproto.org/cxxrpc.html#kj-concurrency-framework)
 into Rust.
 

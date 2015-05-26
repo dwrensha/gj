@@ -51,7 +51,7 @@ fn child(delay: u32) -> gj::Result<gj::io::SocketStream> {
     return Ok(stream);
 }
 
-fn listen_to_child(id: String, stream: gj::io::SocketStream, buf: Vec<u8>) -> gj::Promise<()> {
+fn listen_to_child(id: &'static str, stream: gj::io::SocketStream, buf: Vec<u8>) -> gj::Promise<()> {
     return stream.read(buf, 1).then(move |(stream, buf, _n)| {
         println!("heard back from {}", id);
         return Ok(listen_to_child(id, stream, buf));
@@ -72,9 +72,9 @@ pub fn main() {
 
         let children = vec![
             parent_wait_loop(),
-            listen_to_child("CHILD 1".to_string(), try!(child(700)), vec![0]),
-            listen_to_child("CHILD 2".to_string(), try!(child(1900)), vec![0]),
-            listen_to_child("CHILD 3".to_string(), try!(child(2600)), vec![0])];
+            listen_to_child("CHILD 1", try!(child(700)), vec![0]),
+            listen_to_child("CHILD 2", try!(child(1900)), vec![0]),
+            listen_to_child("CHILD 3", try!(child(2600)), vec![0])];
 
         try!(gj::join_promises(children).wait(wait_scope));
 

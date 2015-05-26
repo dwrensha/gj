@@ -28,17 +28,17 @@ use private::{with_current_event_loop};
 
 
 /// A nonblocking input bytestream.
-pub trait AsyncRead : 'static {
+pub trait AsyncRead: 'static {
 
     /// Attempts to read `buf.len()` bytes from the stream, writing them into `buf`.
     /// Returns `self`, the modified `buf`, and the number of bytes actually read.
     /// Returns as soon as `min_bytes` are read or EOF is encountered.
-    fn try_read<T>(self: Self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
+    fn try_read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
         where T: DerefMut<Target=[u8]>;
 
     /// Like `try_read()`, but returns an error if EOF is encountered before `min_bytes`
     /// can be read.
-    fn read<T>(self: Self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
+    fn read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
         where T: DerefMut<Target=[u8]>, Self: Sized
     {
         return self.try_read(buf, min_bytes).map(move |(s, buf, n)| {
@@ -52,10 +52,10 @@ pub trait AsyncRead : 'static {
 }
 
 /// A nonblocking output bytestream.
-pub trait AsyncWrite : 'static {
+pub trait AsyncWrite: 'static {
     /// Attempts to write all `buf.len()` bytes from `buf` into the stream. Returns `self` and `buf`
     /// once all of the bytes have been written.
-    fn write<T>(self: Self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]>;
+    fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]>;
 }
 
 pub struct Slice<T> where T: Deref<Target=[u8]> {
