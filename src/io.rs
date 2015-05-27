@@ -191,16 +191,16 @@ pub struct TcpStream {
 }
 
 impl ::mio::TryRead for TcpStream {
-    fn read_slice(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
+    fn try_read(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryRead;
-        self.stream.read_slice(buf)
+        self.stream.try_read(buf)
     }
 }
 
 impl ::mio::TryWrite for TcpStream {
-    fn write_slice(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
+    fn try_write(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryWrite;
-        self.stream.write_slice(buf)
+        self.stream.try_write(buf)
     }
 }
 
@@ -244,7 +244,7 @@ fn try_read_internal<R, T>(mut reader: R,
     use mio::TryRead;
 
     while already_read < min_bytes {
-        let read_result = try!(reader.read_slice(&mut buf[already_read..]));
+        let read_result = try!(reader.try_read(&mut buf[already_read..]));
         match read_result {
             Some(0) => {
                 // EOF
@@ -277,7 +277,7 @@ fn write_internal<W, T>(mut writer: W,
     use mio::TryWrite;
 
     while already_written < buf.len() {
-        let write_result = try!(writer.write_slice(&buf[already_written..]));
+        let write_result = try!(writer.try_write(&buf[already_written..]));
         match write_result {
             Some(n) => {
                 already_written += n;
@@ -445,16 +445,16 @@ pub struct SocketStream {
 }
 
 impl ::mio::TryRead for SocketStream {
-    fn read_slice(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
+    fn try_read(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryRead;
-        self.stream.read_slice(buf)
+        self.stream.try_read(buf)
     }
 }
 
 impl ::mio::TryWrite for SocketStream {
-    fn write_slice(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
+    fn try_write(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryWrite;
-        self.stream.write_slice(buf)
+        self.stream.try_write(buf)
     }
 }
 
