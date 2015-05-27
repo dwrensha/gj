@@ -11,7 +11,7 @@ GJ is a port of the
 into Rust.
 
 A GJ event loop allows you to register callbacks to be executed when nonblocking IO completes.
-You can have many theads, each with their own GJ event loop.
+You can have many threads, each with their own GJ event loop.
 A single event loop runs on a single thread,
 so you can share mutable data between callbacks without any need for mutexes or atomics.
 
