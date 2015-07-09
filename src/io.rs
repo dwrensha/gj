@@ -81,8 +81,8 @@ fn register_new_handle<E>(evented: &E) -> Result<Handle> where E: ::mio::Evented
     let token = ::mio::Token(handle.val);
     return with_current_event_loop(move |event_loop| {
         try!(event_loop.event_port.borrow_mut().reactor.register_opt(evented, token,
-                                                                     ::mio::Interest::writable() |
-                                                                     ::mio::Interest::readable(),
+                                                                     ::mio::EventSet::writable() |
+                                                                     ::mio::EventSet::readable(),
                                                                      ::mio::PollOpt::edge()));
         // XXX if this fails, the handle does not get cleanedup.
 
@@ -112,7 +112,7 @@ impl NetworkAddress {
 
         return with_current_event_loop(move |event_loop| {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
-                                                                         ::mio::Interest::readable(),
+                                                                         ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
             Ok(ConnectionReceiver { listener: listener,
                                     handle: handle })
@@ -366,21 +366,23 @@ impl MioEventPort {
 impl ::mio::Handler for Handler {
     type Timeout = Timeout;
     type Message = ();
-    fn readable(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
-                token: ::mio::Token, _hint: ::mio::ReadHint) {
-        match ::std::mem::replace(&mut self.observers[Handle {val: token.0}].read_fulfiller, None) {
-            Some(fulfiller) => {
-                fulfiller.fulfill(())
-            }
-            None => {
-                ()
+    fn ready(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
+             token: ::mio::Token, events: ::mio::EventSet) {
+        if events.is_readable() {
+            match ::std::mem::replace(&mut self.observers[Handle {val: token.0}].read_fulfiller, None) {
+                Some(fulfiller) => {
+                    fulfiller.fulfill(())
+                }
+                None => {
+                    ()
+                }
             }
         }
-    }
-    fn writable(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, token: ::mio::Token) {
-        match ::std::mem::replace(&mut self.observers[Handle { val: token.0}].write_fulfiller, None) {
-            Some(fulfiller) => fulfiller.fulfill(()),
-            None => (),
+        if events.is_writable() {
+            match ::std::mem::replace(&mut self.observers[Handle { val: token.0}].write_fulfiller, None) {
+                Some(fulfiller) => fulfiller.fulfill(()),
+                None => (),
+            }
         }
     }
     fn timeout(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, timeout: Timeout) {
