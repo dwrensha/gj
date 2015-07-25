@@ -20,6 +20,7 @@
 // THE SOFTWARE.
 
 extern crate gj;
+use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
 
 fn echo<S,B>(stream: S, buf: B) -> gj::Promise<()>
@@ -62,10 +63,9 @@ pub fn main() {
     }
 
     gj::EventLoop::top_level(move |wait_scope| {
-        let addr = try!(gj::io::NetworkAddress::new(&*args[1]));
-        let receiver = try!(addr.listen());
-
-        return accept_loop(receiver,
+        let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
+        let listener = try!(::gj::io::TcpListener::bind(&addr));
+        return accept_loop(listener,
                            gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
     }).unwrap();
 }

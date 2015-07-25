@@ -20,6 +20,7 @@
 // THE SOFTWARE.
 
 extern crate gj;
+use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
 
 fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
@@ -38,13 +39,12 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
 }
 
 fn accept_loop(receiver: gj::io::TcpListener,
-               outbound_addr: gj::io::NetworkAddress,
+               outbound_addr: ::std::net::SocketAddr,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
-
     return receiver.accept().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
-        return Ok(gj::io::Timer.timeout_after_ms(1000, outbound_addr.connect())
+        return Ok(gj::io::Timer.timeout_after_ms(3000, ::gj::io::TcpStream::connect(outbound_addr))
                 .then_else(move |dst_stream| {
                     task_set.add(forward(try!(src_stream.try_clone()),
                                          try!(dst_stream.try_clone()),
@@ -74,13 +74,11 @@ pub fn main() {
     }
 
     gj::EventLoop::top_level(|wait_scope| {
+        let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
+        let listener = try!(::gj::io::TcpListener::bind(&addr));
 
-        let addr = gj::io::NetworkAddress::new(&*args[1]).unwrap();
-        let receiver = addr.listen().unwrap();
-
-        let outbound_addr = gj::io::NetworkAddress::new(&*args[2]).unwrap();
-
-        return accept_loop(receiver,
+        let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
+        return accept_loop(listener,
                            outbound_addr,
                            gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
     }).unwrap();

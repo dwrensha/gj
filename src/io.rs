@@ -26,10 +26,8 @@ use handle_table::{HandleTable, Handle};
 use {EventLoop, EventPort, Promise, PromiseFulfiller, Result, WaitScope, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
-
 /// A nonblocking input bytestream.
 pub trait AsyncRead: 'static {
-
     /// Attempts to read `buf.len()` bytes from the stream, writing them into `buf`.
     /// Returns `self`, the modified `buf`, and the number of bytes actually read.
     /// Returns as soon as `min_bytes` are read or EOF is encountered.
@@ -84,66 +82,9 @@ fn register_new_handle<E>(evented: &E) -> Result<Handle> where E: ::mio::Evented
                                                                      ::mio::EventSet::writable() |
                                                                      ::mio::EventSet::readable(),
                                                                      ::mio::PollOpt::edge()));
-        // XXX if this fails, the handle does not get cleanedup.
-
+        // XXX if this fails, the handle does not get cleaned up.
         return Ok(handle);
     });
-}
-
-#[derive(Copy, Clone)]
-pub struct NetworkAddress {
-    address: ::std::net::SocketAddr,
-}
-
-impl NetworkAddress {
-    pub fn new<T : ::std::net::ToSocketAddrs>(address: T) -> Result<NetworkAddress> {
-        match try!(address.to_socket_addrs()).next() {
-            Some(addr) => return Ok(NetworkAddress { address: addr }),
-            None => unimplemented!(),
-        }
-    }
-
-    pub fn listen(self) -> Result<TcpListener> {
-        let socket = try!(::mio::tcp::TcpSocket::v4());
-        try!(socket.set_reuseaddr(true));
-        try!(socket.bind(&self.address));
-        let handle = FdObserver::new();
-        let listener = try!(socket.listen(256));
-
-        return with_current_event_loop(move |event_loop| {
-            try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
-                                                                         ::mio::EventSet::readable(),
-                                                                         ::mio::PollOpt::edge()));
-            Ok(TcpListener { listener: listener,
-                             handle: handle })
-        });
-    }
-
-    pub fn connect(self) -> Promise<TcpStream> {
-        return Promise::fulfilled(()).then(move |()| {
-            let socket = try!(::mio::tcp::TcpSocket::v4());
-            let (stream, connected) = try!(socket.connect(&self.address));
-
-            // TODO: if we're not already connected, maybe only register writable interest,
-            // and then reregister with read/write interested once we successfully connect.
-
-            let handle = try!(register_new_handle(&stream));
-
-            if connected {
-                return Ok(Promise::fulfilled(TcpStream::new(stream, handle)));
-            } else {
-                return with_current_event_loop(move |event_loop| {
-                    let promise =
-                        event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
-
-                    return Ok(promise.map(move |()| {
-                        // TODO check for error.
-                        return Ok(TcpStream::new(stream, handle));
-                    }));
-                });
-            }
-        });
-    }
 }
 
 pub struct TcpListener {
@@ -158,6 +99,19 @@ impl Drop for TcpListener {
 }
 
 impl TcpListener {
+    pub fn bind(addr: &::std::net::SocketAddr) -> Result<TcpListener> {
+        let listener = try!(::mio::tcp::TcpListener::bind(addr));
+        let handle = FdObserver::new();
+
+        return with_current_event_loop(move |event_loop| {
+            try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
+                                                                         ::mio::EventSet::readable(),
+                                                                         ::mio::PollOpt::edge()));
+            Ok(TcpListener { listener: listener,
+                             handle: handle })
+        });
+    }
+
     fn accept_internal(self) -> Result<Promise<(TcpListener, TcpStream)>> {
         let accept_result = try!(self.listener.accept());
         match accept_result {
@@ -176,7 +130,6 @@ impl TcpListener {
             }
         }
     }
-
 
     pub fn accept(self) -> Promise<(TcpListener, TcpStream)> {
         return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
@@ -210,7 +163,6 @@ impl HasHandle for TcpStream {
     fn get_handle(&self) -> Handle { self.handle }
 }
 
-
 impl Drop for TcpStream {
     fn drop(&mut self) {
         return with_current_event_loop(move |event_loop| {
@@ -225,13 +177,33 @@ impl TcpStream {
         TcpStream { stream: stream, handle: handle }
     }
 
+    pub fn connect(addr: ::std::net::SocketAddr) -> Promise<TcpStream> {
+        return Promise::fulfilled(()).then(move |()| {
+            let stream = try!(::mio::tcp::TcpStream::connect(&addr));
+
+            // TODO: if we're not already connected, maybe only register writable interest,
+            // and then reregister with read/write interested once we successfully connect.
+
+            let handle = try!(register_new_handle(&stream));
+
+            return with_current_event_loop(move |event_loop| {
+                let promise =
+                    event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
+                return Ok(promise.map(move |()| {
+                    try!(stream.take_socket_error());
+                    return Ok(TcpStream::new(stream, handle));
+                }));
+            });
+        });
+
+    }
+
     pub fn try_clone(&self) -> Result<TcpStream> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
         return Ok(TcpStream::new(stream, handle));
     }
 }
-
 
 fn try_read_internal<R, T>(mut reader: R,
                            mut buf: T,
@@ -313,7 +285,6 @@ impl AsyncWrite for TcpStream {
         });
     }
 }
-
 
 struct FdObserver {
     read_fulfiller: Option<Box<PromiseFulfiller<()>>>,
