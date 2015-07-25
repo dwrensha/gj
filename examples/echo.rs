@@ -38,7 +38,7 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<()>
     });
 }
 
-fn accept_loop(receiver: gj::io::TcpListener,
+fn accept_loop(receiver: gj::io::tcp::TcpListener,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
     return receiver.accept().then(move |(receiver, stream)| {
@@ -64,7 +64,7 @@ pub fn main() {
 
     gj::EventLoop::top_level(move |wait_scope| {
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
-        let listener = try!(::gj::io::TcpListener::bind(addr));
+        let listener = try!(::gj::io::tcp::TcpListener::bind(addr));
         return accept_loop(listener,
                            gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
     }).unwrap();
