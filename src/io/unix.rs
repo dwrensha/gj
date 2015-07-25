@@ -129,6 +129,12 @@ impl Stream {
         let handle = try!(register_new_handle(&stream));
         return Ok(Stream::new(stream, handle));
     }
+
+    pub unsafe fn from_raw_fd(fd: ::std::os::unix::io::RawFd) -> Result<Stream> {
+        let stream = ::std::os::unix::io::FromRawFd::from_raw_fd(fd);
+        let handle = try!(register_new_handle(&stream));
+        return Ok(Stream::new(stream, handle));
+    }
 }
 
 impl AsyncRead for Stream {
