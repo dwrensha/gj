@@ -37,7 +37,7 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<()>
     });
 }
 
-fn accept_loop(receiver: gj::io::ConnectionReceiver,
+fn accept_loop(receiver: gj::io::TcpListener,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
     return receiver.accept().then(move |(receiver, stream)| {

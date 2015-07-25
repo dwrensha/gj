@@ -103,7 +103,7 @@ impl NetworkAddress {
         }
     }
 
-    pub fn listen(self) -> Result<ConnectionReceiver> {
+    pub fn listen(self) -> Result<TcpListener> {
         let socket = try!(::mio::tcp::TcpSocket::v4());
         try!(socket.set_reuseaddr(true));
         try!(socket.bind(&self.address));
@@ -114,8 +114,8 @@ impl NetworkAddress {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
-            Ok(ConnectionReceiver { listener: listener,
-                                    handle: handle })
+            Ok(TcpListener { listener: listener,
+                             handle: handle })
         });
     }
 
@@ -146,21 +146,19 @@ impl NetworkAddress {
     }
 }
 
-
-pub struct ConnectionReceiver {
+pub struct TcpListener {
     listener: ::mio::tcp::TcpListener,
     handle: Handle,
 }
 
-impl Drop for ConnectionReceiver {
+impl Drop for TcpListener {
     fn drop(&mut self) {
         // deregister the token
     }
 }
 
-impl ConnectionReceiver {
-
-    fn accept_internal(self) -> Result<Promise<(ConnectionReceiver, TcpStream)>> {
+impl TcpListener {
+    fn accept_internal(self) -> Result<Promise<(TcpListener, TcpStream)>> {
         let accept_result = try!(self.listener.accept());
         match accept_result {
             Some(stream) => {
@@ -180,7 +178,7 @@ impl ConnectionReceiver {
     }
 
 
-    pub fn accept(self) -> Promise<(ConnectionReceiver, TcpStream)> {
+    pub fn accept(self) -> Promise<(TcpListener, TcpStream)> {
         return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
     }
 }

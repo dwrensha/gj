@@ -37,7 +37,7 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
     });
 }
 
-fn accept_loop(receiver: gj::io::ConnectionReceiver,
+fn accept_loop(receiver: gj::io::TcpListener,
                outbound_addr: gj::io::NetworkAddress,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
 
