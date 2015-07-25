@@ -23,7 +23,7 @@ use std::ops::{DerefMut, Deref};
 use handle_table::{Handle};
 use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
            FdObserver, HasHandle, register_new_handle};
-use {Promise, Result};
+use {EventLoop, Promise, Result, WaitScope};
 use private::{with_current_event_loop};
 
 pub struct UnixStream {
@@ -146,4 +146,40 @@ impl AsyncWrite for UnixStream {
             return write_internal(self, buf, 0);
         });
     }
+}
+
+/// Creates a new thread and sets up a socket pair that can be used to communicate with it.
+/// Passes one of the sockets to the thread's start function and returns the other socket.
+/// The new thread will already have an active event loop when `start_func` is called.
+pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, UnixStream)>
+    where F: FnOnce(UnixStream, &WaitScope) -> Result<()>,
+          F: Send + 'static
+{
+    use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};
+    use std::os::unix::io::FromRawFd;
+
+    let (fd0, fd1) =
+        // eh... the trait `std::error::Error` is not implemented for the type `nix::Error`
+        match socketpair(AddressFamily::Unix, SockType::Stream, 0, SOCK_NONBLOCK | SOCK_CLOEXEC) {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other,
+                                                          "failed to create socketpair")))
+            }
+        };
+
+    let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd0) };
+    let handle = try!(register_new_handle(&io));
+    let socket_stream = UnixStream { stream: io, handle: handle };
+
+    let join_handle = ::std::thread::spawn(move || {
+        let _result = EventLoop::top_level(move |wait_scope| {
+            let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd1) };
+            let handle = try!(register_new_handle(&io));
+            let socket_stream = UnixStream { stream: io, handle: handle };
+            start_func(socket_stream, &wait_scope)
+        });
+    });
+
+    return Ok((join_handle, socket_stream));
 }

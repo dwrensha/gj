@@ -23,7 +23,7 @@
 
 use std::ops::{DerefMut, Deref};
 use handle_table::{HandleTable, Handle};
-use {EventLoop, EventPort, Promise, PromiseFulfiller, Result, WaitScope, new_promise_and_fulfiller};
+use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
 pub mod tcp;
@@ -281,79 +281,4 @@ impl Drop for TimeoutDropper {
 
 struct Timeout {
     fulfiller: Box<PromiseFulfiller<()>>,
-}
-
-pub struct SocketStream {
-    stream: ::mio::Io,
-    handle: Handle,
-}
-
-impl ::mio::TryRead for SocketStream {
-    fn try_read(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
-        use mio::TryRead;
-        self.stream.try_read(buf)
-    }
-}
-
-impl ::mio::TryWrite for SocketStream {
-    fn try_write(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
-        use mio::TryWrite;
-        self.stream.try_write(buf)
-    }
-}
-
-impl HasHandle for SocketStream {
-    fn get_handle(&self) -> Handle { self.handle }
-}
-
-impl AsyncRead for SocketStream {
-    fn try_read<T>(self, buf: T,
-               min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
-        return Promise::fulfilled(()).then(move |()| {
-            return try_read_internal(self, buf, 0, min_bytes);
-        });
-    }
-}
-
-impl AsyncWrite for SocketStream {
-    fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
-        return Promise::fulfilled(()).then(move |()| {
-            return write_internal(self, buf, 0);
-        });
-    }
-}
-
-/// Creates a new thread and sets up a socket pair that can be used to communicate with it.
-/// Passes one of the sockets to the thread's start function and returns the other socket.
-/// The new thread will already have an active event loop when `start_func` is called.
-pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, SocketStream)>
-    where F: FnOnce(SocketStream, &WaitScope) -> Result<()>,
-          F: Send + 'static
-{
-    use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};
-
-    let (fd0, fd1) =
-        // eh... the trait `std::error::Error` is not implemented for the type `nix::Error`
-        match socketpair(AddressFamily::Unix, SockType::Stream, 0, SOCK_NONBLOCK | SOCK_CLOEXEC) {
-            Ok(v) => v,
-            Err(_) => {
-                return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other,
-                                                          "failed to create socketpair")))
-            }
-        };
-
-    let io = ::mio::Io::from_raw_fd(fd0);
-    let handle = try!(register_new_handle(&io));
-    let socket_stream = SocketStream { stream: io, handle: handle };
-
-    let join_handle = ::std::thread::spawn(move || {
-        let _result = EventLoop::top_level(move |wait_scope| {
-            let io = ::mio::Io::from_raw_fd(fd1);
-            let handle = try!(register_new_handle(&io));
-            let socket_stream = SocketStream { stream: io, handle: handle };
-            start_func(socket_stream, &wait_scope)
-        });
-    });
-
-    return Ok((join_handle, socket_stream));
 }
