@@ -32,7 +32,7 @@
 extern crate gj;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn child_loop(delay: u32, stream: gj::io::unix::UnixStream, buf: Vec<u8>) -> gj::Promise<()> {
+fn child_loop(delay: u32, stream: gj::io::unix::Stream, buf: Vec<u8>) -> gj::Promise<()> {
 
     // This blocks the entire thread. This is okay because we are on a child thread
     // where nothing else needs to happen.
@@ -43,7 +43,7 @@ fn child_loop(delay: u32, stream: gj::io::unix::UnixStream, buf: Vec<u8>) -> gj:
     });
 }
 
-fn child(delay: u32) -> gj::Result<gj::io::unix::UnixStream> {
+fn child(delay: u32) -> gj::Result<gj::io::unix::Stream> {
     let (_, stream) = try!(gj::io::unix::spawn(move |parent_stream, wait_scope| {
         try!(child_loop(delay, parent_stream, vec![0u8]).wait(wait_scope));
         Ok(())
@@ -51,7 +51,7 @@ fn child(delay: u32) -> gj::Result<gj::io::unix::UnixStream> {
     return Ok(stream);
 }
 
-fn listen_to_child(id: &'static str, stream: gj::io::unix::UnixStream, buf: Vec<u8>) -> gj::Promise<()> {
+fn listen_to_child(id: &'static str, stream: gj::io::unix::Stream, buf: Vec<u8>) -> gj::Promise<()> {
     return stream.read(buf, 1).then(move |(stream, buf, _n)| {
         println!("heard back from {}", id);
         return Ok(listen_to_child(id, stream, buf));

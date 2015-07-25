@@ -26,24 +26,24 @@ use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
 use {EventLoop, Promise, Result, WaitScope};
 use private::{with_current_event_loop};
 
-pub struct UnixStream {
+pub struct Stream {
     stream: ::mio::unix::UnixStream,
     handle: Handle,
 }
 
-pub struct UnixListener {
+pub struct Listener {
     listener: ::mio::unix::UnixListener,
     handle: Handle,
 }
 
-impl Drop for UnixListener {
+impl Drop for Listener {
     fn drop(&mut self) {
         // deregister the token
     }
 }
 
-impl UnixListener {
-    pub fn bind<P: AsRef<::std::path::Path>>(addr: P) -> Result<UnixListener> {
+impl Listener {
+    pub fn bind<P: AsRef<::std::path::Path>>(addr: P) -> Result<Listener> {
         let listener = try!(::mio::unix::UnixListener::bind(&addr));
         let handle = FdObserver::new();
 
@@ -51,17 +51,17 @@ impl UnixListener {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
-            Ok(UnixListener { listener: listener,
-                              handle: handle })
+            Ok(Listener { listener: listener,
+                          handle: handle })
         });
     }
 
-    fn accept_internal(self) -> Result<Promise<(UnixListener, UnixStream)>> {
+    fn accept_internal(self) -> Result<Promise<(Listener, Stream)>> {
         let accept_result = try!(self.listener.accept());
         match accept_result {
             Some(stream) => {
                 let handle = try!(register_new_handle(&stream));
-                return Ok(Promise::fulfilled((self, UnixStream::new(stream, handle))));
+                return Ok(Promise::fulfilled((self, Stream::new(stream, handle))));
             }
             None => {
                 return with_current_event_loop(move |event_loop| {
@@ -75,35 +75,35 @@ impl UnixListener {
         }
     }
 
-    pub fn accept(self) -> Promise<(UnixListener, UnixStream)> {
+    pub fn accept(self) -> Promise<(Listener, Stream)> {
         return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
     }
 }
 
-impl ::mio::TryRead for UnixStream {
+impl ::mio::TryRead for Stream {
     fn try_read(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryRead;
         self.stream.try_read(buf)
     }
 }
 
-impl ::mio::TryWrite for UnixStream {
+impl ::mio::TryWrite for Stream {
     fn try_write(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryWrite;
         self.stream.try_write(buf)
     }
 }
 
-impl HasHandle for UnixStream {
+impl HasHandle for Stream {
     fn get_handle(&self) -> Handle { self.handle }
 }
 
-impl UnixStream {
-    fn new(stream: ::mio::unix::UnixStream, handle: Handle) -> UnixStream {
-        UnixStream { stream: stream, handle: handle }
+impl Stream {
+    fn new(stream: ::mio::unix::UnixStream, handle: Handle) -> Stream {
+        Stream { stream: stream, handle: handle }
     }
 
-    pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<UnixStream> {
+    pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<Stream> {
         let connect_result = ::mio::unix::UnixStream::connect(&addr);
         return Promise::fulfilled(()).then(move |()| {
             let stream = try!(connect_result);
@@ -118,20 +118,20 @@ impl UnixStream {
                     event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
                 return Ok(promise.map(move |()| {
                     //try!(stream.take_socket_error());
-                    return Ok(UnixStream::new(stream, handle));
+                    return Ok(Stream::new(stream, handle));
                 }));
             });
         });
     }
 
-    pub fn try_clone(&self) -> Result<UnixStream> {
+    pub fn try_clone(&self) -> Result<Stream> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
-        return Ok(UnixStream::new(stream, handle));
+        return Ok(Stream::new(stream, handle));
     }
 }
 
-impl AsyncRead for UnixStream {
+impl AsyncRead for Stream {
     fn try_read<T>(self, buf: T,
                min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
@@ -140,7 +140,7 @@ impl AsyncRead for UnixStream {
     }
 }
 
-impl AsyncWrite for UnixStream {
+impl AsyncWrite for Stream {
     fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
             return write_internal(self, buf, 0);
@@ -151,8 +151,8 @@ impl AsyncWrite for UnixStream {
 /// Creates a new thread and sets up a socket pair that can be used to communicate with it.
 /// Passes one of the sockets to the thread's start function and returns the other socket.
 /// The new thread will already have an active event loop when `start_func` is called.
-pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, UnixStream)>
-    where F: FnOnce(UnixStream, &WaitScope) -> Result<()>,
+pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream)>
+    where F: FnOnce(Stream, &WaitScope) -> Result<()>,
           F: Send + 'static
 {
     use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};
@@ -170,13 +170,13 @@ pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, UnixStr
 
     let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd0) };
     let handle = try!(register_new_handle(&io));
-    let socket_stream = UnixStream { stream: io, handle: handle };
+    let socket_stream = Stream { stream: io, handle: handle };
 
     let join_handle = ::std::thread::spawn(move || {
         let _result = EventLoop::top_level(move |wait_scope| {
             let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd1) };
             let handle = try!(register_new_handle(&io));
-            let socket_stream = UnixStream { stream: io, handle: handle };
+            let socket_stream = Stream { stream: io, handle: handle };
             start_func(socket_stream, &wait_scope)
         });
     });

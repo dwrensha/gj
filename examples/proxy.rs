@@ -38,13 +38,13 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
     });
 }
 
-fn accept_loop(receiver: gj::io::tcp::TcpListener,
+fn accept_loop(receiver: gj::io::tcp::Listener,
                outbound_addr: ::std::net::SocketAddr,
                mut task_set: gj::TaskSet) -> gj::Promise<()> {
     return receiver.accept().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
-        return Ok(gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::TcpStream::connect(outbound_addr))
+        return Ok(gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::Stream::connect(outbound_addr))
                 .then_else(move |dst_stream| {
                     task_set.add(forward(try!(src_stream.try_clone()),
                                          try!(dst_stream.try_clone()),
@@ -75,7 +75,7 @@ pub fn main() {
 
     gj::EventLoop::top_level(|wait_scope| {
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
-        let listener = try!(::gj::io::tcp::TcpListener::bind(addr));
+        let listener = try!(::gj::io::tcp::Listener::bind(addr));
 
         let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
         return accept_loop(listener,

@@ -27,13 +27,13 @@ fn hello() {
     gj::EventLoop::top_level(|wait_scope| {
 
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10000").unwrap();
-        let listener = gj::io::tcp::TcpListener::bind(addr).unwrap();
+        let listener = gj::io::tcp::Listener::bind(addr).unwrap();
 
         let _write_promise = listener.accept().then(move |(_, stream)| {
             return Ok(stream.write(vec![0,1,2,3,4,5]));
         });
 
-        let read_promise = gj::io::tcp::TcpStream::connect(addr).then(move |stream| {
+        let read_promise = gj::io::tcp::Stream::connect(addr).then(move |stream| {
             return Ok(stream.read(vec![0u8; 6], 6));
         });
 
@@ -51,7 +51,7 @@ fn echo() {
     gj::EventLoop::top_level(|wait_scope| {
 
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10001").unwrap();
-        let listener = gj::io::tcp::TcpListener::bind(addr).unwrap();
+        let listener = gj::io::tcp::Listener::bind(addr).unwrap();
 
         let _server_promise = listener.accept().then(move |(_, stream)| {
             return Ok(stream.read(vec![0u8; 6], 6).then(move |(stream, mut v, _)| {
@@ -63,7 +63,7 @@ fn echo() {
             }));
         });
 
-        let client_promise = gj::io::tcp::TcpStream::connect(addr).then(move |stream| {
+        let client_promise = gj::io::tcp::Stream::connect(addr).then(move |stream| {
             return Ok(stream.write(vec![7,6,5,4,3,2]).then(move |(stream, v)| {
                 return Ok(stream.read(v, 6));
             }));

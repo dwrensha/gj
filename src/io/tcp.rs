@@ -26,24 +26,24 @@ use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
 use {Promise, Result};
 use private::{with_current_event_loop};
 
-pub struct TcpStream {
+pub struct Stream {
     stream: ::mio::tcp::TcpStream,
     handle: Handle,
 }
 
-pub struct TcpListener {
+pub struct Listener {
     listener: ::mio::tcp::TcpListener,
     handle: Handle,
 }
 
-impl Drop for TcpListener {
+impl Drop for Listener {
     fn drop(&mut self) {
         // deregister the token
     }
 }
 
-impl TcpListener {
-    pub fn bind(addr: ::std::net::SocketAddr) -> Result<TcpListener> {
+impl Listener {
+    pub fn bind(addr: ::std::net::SocketAddr) -> Result<Listener> {
         let listener = try!(::mio::tcp::TcpListener::bind(&addr));
         let handle = FdObserver::new();
 
@@ -51,17 +51,17 @@ impl TcpListener {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
-            Ok(TcpListener { listener: listener,
-                             handle: handle })
+            Ok(Listener { listener: listener,
+                          handle: handle })
         });
     }
 
-    fn accept_internal(self) -> Result<Promise<(TcpListener, TcpStream)>> {
+    fn accept_internal(self) -> Result<Promise<(Listener, Stream)>> {
         let accept_result = try!(self.listener.accept());
         match accept_result {
             Some(stream) => {
                 let handle = try!(register_new_handle(&stream));
-                return Ok(Promise::fulfilled((self, TcpStream::new(stream, handle))));
+                return Ok(Promise::fulfilled((self, Stream::new(stream, handle))));
             }
             None => {
                 return with_current_event_loop(move |event_loop| {
@@ -75,30 +75,30 @@ impl TcpListener {
         }
     }
 
-    pub fn accept(self) -> Promise<(TcpListener, TcpStream)> {
+    pub fn accept(self) -> Promise<(Listener, Stream)> {
         return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
     }
 }
 
-impl ::mio::TryRead for TcpStream {
+impl ::mio::TryRead for Stream {
     fn try_read(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryRead;
         self.stream.try_read(buf)
     }
 }
 
-impl ::mio::TryWrite for TcpStream {
+impl ::mio::TryWrite for Stream {
     fn try_write(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
         use mio::TryWrite;
         self.stream.try_write(buf)
     }
 }
 
-impl HasHandle for TcpStream {
+impl HasHandle for Stream {
     fn get_handle(&self) -> Handle { self.handle }
 }
 
-impl Drop for TcpStream {
+impl Drop for Stream {
     fn drop(&mut self) {
         return with_current_event_loop(move |event_loop| {
             event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
@@ -107,12 +107,12 @@ impl Drop for TcpStream {
     }
 }
 
-impl TcpStream {
-    fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> TcpStream {
-        TcpStream { stream: stream, handle: handle }
+impl Stream {
+    fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> Stream {
+        Stream { stream: stream, handle: handle }
     }
 
-    pub fn connect(addr: ::std::net::SocketAddr) -> Promise<TcpStream> {
+    pub fn connect(addr: ::std::net::SocketAddr) -> Promise<Stream> {
         return Promise::fulfilled(()).then(move |()| {
             let stream = try!(::mio::tcp::TcpStream::connect(&addr));
 
@@ -126,20 +126,20 @@ impl TcpStream {
                     event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
                 return Ok(promise.map(move |()| {
                     try!(stream.take_socket_error());
-                    return Ok(TcpStream::new(stream, handle));
+                    return Ok(Stream::new(stream, handle));
                 }));
             });
         });
     }
 
-    pub fn try_clone(&self) -> Result<TcpStream> {
+    pub fn try_clone(&self) -> Result<Stream> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
-        return Ok(TcpStream::new(stream, handle));
+        return Ok(Stream::new(stream, handle));
     }
 }
 
-impl AsyncRead for TcpStream {
+impl AsyncRead for Stream {
     fn try_read<T>(self, buf: T,
                min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
@@ -148,7 +148,7 @@ impl AsyncRead for TcpStream {
     }
 }
 
-impl AsyncWrite for TcpStream {
+impl AsyncWrite for Stream {
     fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
             return write_internal(self, buf, 0);
