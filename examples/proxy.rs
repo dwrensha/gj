@@ -75,7 +75,7 @@ pub fn main() {
 
     gj::EventLoop::top_level(|wait_scope| {
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
-        let listener = try!(::gj::io::TcpListener::bind(&addr));
+        let listener = try!(::gj::io::TcpListener::bind(addr));
 
         let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
         return accept_loop(listener,

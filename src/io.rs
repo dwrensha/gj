@@ -104,8 +104,8 @@ impl Drop for TcpListener {
 }
 
 impl TcpListener {
-    pub fn bind(addr: &::std::net::SocketAddr) -> Result<TcpListener> {
-        let listener = try!(::mio::tcp::TcpListener::bind(addr));
+    pub fn bind(addr: ::std::net::SocketAddr) -> Result<TcpListener> {
+        let listener = try!(::mio::tcp::TcpListener::bind(&addr));
         let handle = FdObserver::new();
 
         return with_current_event_loop(move |event_loop| {

@@ -27,7 +27,7 @@ fn hello() {
     gj::EventLoop::top_level(|wait_scope| {
 
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10000").unwrap();
-        let listener = gj::io::TcpListener::bind(&addr).unwrap();
+        let listener = gj::io::TcpListener::bind(addr).unwrap();
 
         let _write_promise = listener.accept().then(move |(_, stream)| {
             return Ok(stream.write(vec![0,1,2,3,4,5]));
@@ -51,7 +51,7 @@ fn echo() {
     gj::EventLoop::top_level(|wait_scope| {
 
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10001").unwrap();
-        let listener = gj::io::TcpListener::bind(&addr).unwrap();
+        let listener = gj::io::TcpListener::bind(addr).unwrap();
 
         let _server_promise = listener.accept().then(move |(_, stream)| {
             return Ok(stream.read(vec![0u8; 6], 6).then(move |(stream, mut v, _)| {
