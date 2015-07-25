@@ -87,6 +87,11 @@ fn register_new_handle<E>(evented: &E) -> Result<Handle> where E: ::mio::Evented
     });
 }
 
+pub struct TcpStream {
+    stream: ::mio::tcp::TcpStream,
+    handle: Handle,
+}
+
 pub struct TcpListener {
     listener: ::mio::tcp::TcpListener,
     handle: Handle,
@@ -136,9 +141,58 @@ impl TcpListener {
     }
 }
 
-pub struct TcpStream {
-    stream: ::mio::tcp::TcpStream,
+pub struct UnixStream {
+    stream: ::mio::unix::UnixStream,
     handle: Handle,
+}
+
+pub struct UnixListener {
+    listener: ::mio::unix::UnixListener,
+    handle: Handle,
+}
+
+impl Drop for UnixListener {
+    fn drop(&mut self) {
+        // deregister the token
+    }
+}
+
+impl UnixListener {
+    pub fn bind<P: AsRef<::std::path::Path>>(addr: P) -> Result<UnixListener> {
+        let listener = try!(::mio::unix::UnixListener::bind(&addr));
+        let handle = FdObserver::new();
+
+        return with_current_event_loop(move |event_loop| {
+            try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
+                                                                         ::mio::EventSet::readable(),
+                                                                         ::mio::PollOpt::edge()));
+            Ok(UnixListener { listener: listener,
+                              handle: handle })
+        });
+    }
+
+    fn accept_internal(self) -> Result<Promise<(UnixListener, UnixStream)>> {
+        let accept_result = try!(self.listener.accept());
+        match accept_result {
+            Some(stream) => {
+                let handle = try!(register_new_handle(&stream));
+                return Ok(Promise::fulfilled((self, UnixStream::new(stream, handle))));
+            }
+            None => {
+                return with_current_event_loop(move |event_loop| {
+                    let promise =
+                        event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
+                    return Ok(promise.then(move |()| {
+                        return self.accept_internal();
+                    }));
+                });
+            }
+        }
+    }
+
+    pub fn accept(self) -> Promise<(UnixListener, UnixStream)> {
+        return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
+    }
 }
 
 impl ::mio::TryRead for TcpStream {
@@ -155,11 +209,29 @@ impl ::mio::TryWrite for TcpStream {
     }
 }
 
+impl ::mio::TryRead for UnixStream {
+    fn try_read(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
+        use mio::TryRead;
+        self.stream.try_read(buf)
+    }
+}
+
+impl ::mio::TryWrite for UnixStream {
+    fn try_write(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
+        use mio::TryWrite;
+        self.stream.try_write(buf)
+    }
+}
+
 trait HasHandle {
     fn get_handle(&self) -> Handle;
 }
 
 impl HasHandle for TcpStream {
+    fn get_handle(&self) -> Handle { self.handle }
+}
+
+impl HasHandle for UnixStream {
     fn get_handle(&self) -> Handle { self.handle }
 }
 
@@ -195,13 +267,45 @@ impl TcpStream {
                 }));
             });
         });
-
     }
 
     pub fn try_clone(&self) -> Result<TcpStream> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
         return Ok(TcpStream::new(stream, handle));
+    }
+}
+
+impl UnixStream {
+    fn new(stream: ::mio::unix::UnixStream, handle: Handle) -> UnixStream {
+        UnixStream { stream: stream, handle: handle }
+    }
+
+    pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<UnixStream> {
+        let connect_result = ::mio::unix::UnixStream::connect(&addr);
+        return Promise::fulfilled(()).then(move |()| {
+            let stream = try!(connect_result);
+
+            // TODO: if we're not already connected, maybe only register writable interest,
+            // and then reregister with read/write interested once we successfully connect.
+
+            let handle = try!(register_new_handle(&stream));
+
+            return with_current_event_loop(move |event_loop| {
+                let promise =
+                    event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
+                return Ok(promise.map(move |()| {
+                    //try!(stream.take_socket_error());
+                    return Ok(UnixStream::new(stream, handle));
+                }));
+            });
+        });
+    }
+
+    pub fn try_clone(&self) -> Result<UnixStream> {
+        let stream = try!(self.stream.try_clone());
+        let handle = try!(register_new_handle(&stream));
+        return Ok(UnixStream::new(stream, handle));
     }
 }
 
