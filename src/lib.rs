@@ -41,7 +41,7 @@ mod handle_table;
 pub struct Forced;
 
 /// A computation that might eventually resolve to a value of type `T` or to an error
-//  of type `E`.
+///  of type `E`.
 pub struct Promise<T, E> where T: 'static, E: 'static {
     node: Box<PromiseNode<T, E>>,
 }
