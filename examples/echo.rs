@@ -23,13 +23,13 @@ extern crate gj;
 use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(), gj::io::Error<(S, B)>>
+fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
     where S: AsyncRead + AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
 {
     stream.try_read(buf, 1).then(move |(stream, buf, n)| {
         if n == 0 {
             // EOF
-            Ok(gj::Promise::fulfilled(()))
+            Ok(gj::Promise::fulfilled((stream, buf)))
         } else {
             Ok(stream.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
                 Ok((stream, slice)) => Ok(echo(stream, slice.buf)),
@@ -44,7 +44,7 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
                mut task_set: gj::TaskSet) -> gj::Promise<(), Box<::std::error::Error>> {
 
     receiver.accept().lift().then(move |(receiver, stream)| {
-        task_set.add(echo(stream, vec![0; 1024]).lift());
+        task_set.add(echo(stream, vec![0; 1024]).lift().map(|_| Ok(())));
         Ok(accept_loop(receiver, task_set).lift())
     })
 }

@@ -23,18 +23,24 @@ extern crate gj;
 use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(), ::std::io::Error>
+fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(R,W,B), gj::io::Error<(R,W,B)>>
     where R: AsyncRead, W: AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
 {
-    src.try_read(buf, 1).lift().then(move |(src, buf, n)| {
-        if n == 0 {
-            // EOF
-            Ok(gj::Promise::fulfilled(()))
-        } else {
-            Ok(dst.write(gj::io::Slice::new(buf, n)).lift().then(move |(dst, slice)| {
-                Ok(forward(src, dst, slice.buf))
-            }))
+    src.try_read(buf, 1).then_else(move |r| match r {
+        Ok((src, buf, n)) => {
+            if n == 0 {
+                // EOF
+                Ok(gj::Promise::fulfilled((src, dst, buf)))
+            } else {
+                Ok(dst.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
+                    Ok((dst, slice)) => Ok(forward(src, dst, slice.buf)),
+                    Err(gj::io::Error {state: (dst, slice), error}) =>
+                        Err(gj::io::Error::new((src, dst, slice.buf), error))
+                }))
+            }
         }
+        Err(gj::io::Error {state: (src, buf), error}) =>
+            Err(gj::io::Error::new((src, dst, buf), error)),
     })
 }
 
@@ -49,8 +55,8 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
                Ok(dst_stream) =>  {
                    task_set.add(forward(try!(src_stream.try_clone()),
                                         try!(dst_stream.try_clone()),
-                                        vec![0; 1024]).lift());
-                   task_set.add(forward(dst_stream, src_stream, vec![0; 1024]).lift());
+                                        vec![0; 1024]).lift().map(|_| Ok(())));
+                   task_set.add(forward(dst_stream, src_stream, vec![0; 1024]).lift().map(|_| Ok(())));
                    Ok(accept_loop(receiver, outbound_addr, task_set).lift())
                }
                Err(e) => {
