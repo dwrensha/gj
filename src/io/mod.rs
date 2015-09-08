@@ -43,6 +43,12 @@ impl <S> Error<S> {
     }
 }
 
+impl <S> Into<::std::io::Error> for Error<S> {
+    fn into(self) -> ::std::io::Error {
+        self.error
+    }
+}
+
 impl <S> Into<Box<::std::error::Error>> for Error<S> {
     fn into(self) -> Box<::std::error::Error> {
         self.error.into()
