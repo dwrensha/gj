@@ -100,8 +100,8 @@ impl <T, E> Promise <T, E> {
         self.map_else(|r| { match r { Ok(v) => Ok(v), Err(e) =>  Err(func(e)) } } )
     }
 
-    /// Transforms the error branch into a common type that all errors should be convertible into.
-    pub fn box_err(self) -> Promise<T, Box<::std::error::Error>> where E: Into<Box<::std::error::Error>> {
+    /// Maps errors into a more general type.
+    pub fn lift<E1>(self) -> Promise<T, E1> where E: Into<E1> {
         self.map_err(|e| e.into())
     }
 

@@ -26,12 +26,12 @@ use gj::io::{AsyncRead, AsyncWrite};
 fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(), Box<::std::error::Error>>
     where S: AsyncRead + AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
 {
-    stream.try_read(buf, 1).box_err().then(move |(stream, buf, n)| {
+    stream.try_read(buf, 1).lift().then(move |(stream, buf, n)| {
         if n == 0 {
             // EOF
             Ok(gj::Promise::fulfilled(()))
         } else {
-            Ok(stream.write(gj::io::Slice::new(buf, n)).box_err().then(move |(stream, slice)| {
+            Ok(stream.write(gj::io::Slice::new(buf, n)).lift().then(move |(stream, slice)| {
                 Ok(echo(stream, slice.buf))
             }))
         }
@@ -41,9 +41,9 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(), Box<::std::error::Error>>
 fn accept_loop(receiver: gj::io::tcp::Listener,
                mut task_set: gj::TaskSet) -> gj::Promise<(), Box<::std::error::Error>> {
 
-    receiver.accept().box_err().then(move |(receiver, stream)| {
-        task_set.add(echo(stream, vec![0; 1024]).box_err());
-        Ok(accept_loop(receiver, task_set).box_err())
+    receiver.accept().lift().then(move |(receiver, stream)| {
+        task_set.add(echo(stream, vec![0; 1024]).lift());
+        Ok(accept_loop(receiver, task_set).lift())
     })
 }
 

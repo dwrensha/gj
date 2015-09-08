@@ -47,7 +47,7 @@ fn child_loop(delay: u32,
 
 fn child(delay: u32) -> Result<gj::io::unix::Stream, Box<::std::error::Error>> {
     let (_, stream) = try!(gj::io::unix::spawn(move |parent_stream, wait_scope| {
-        try!(child_loop(delay, parent_stream, vec![0u8]).box_err().wait(wait_scope));
+        try!(child_loop(delay, parent_stream, vec![0u8]).lift::<Box<::std::error::Error>>().wait(wait_scope));
         Ok(())
     }));
     return Ok(stream);
@@ -75,10 +75,10 @@ pub fn main() {
     gj::EventLoop::top_level(|wait_scope| {
 
         let children = vec![
-            parent_wait_loop().box_err(),
-            listen_to_child("CHILD 1", try!(child(700)), vec![0]).box_err(),
-            listen_to_child("CHILD 2", try!(child(1900)), vec![0]).box_err(),
-            listen_to_child("CHILD 3", try!(child(2600)), vec![0]).box_err()];
+            parent_wait_loop().lift::<Box<::std::error::Error>>(),
+            listen_to_child("CHILD 1", try!(child(700)), vec![0]).lift(),
+            listen_to_child("CHILD 2", try!(child(1900)), vec![0]).lift(),
+            listen_to_child("CHILD 3", try!(child(2600)), vec![0]).lift()];
 
         try!(gj::join_promises(children).wait(wait_scope));
 

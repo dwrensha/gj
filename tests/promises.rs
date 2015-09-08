@@ -258,7 +258,7 @@ fn task_set() {
         }));
         tasks.add(gj::Promise::fulfilled(()).map(|()| {
             Err(::std::io::Error::new(::std::io::ErrorKind::Other, "Fake IO Error"))
-        }).box_err());
+        }).lift());
         tasks.add(gj::Promise::fulfilled(()).map(|()| {
             Ok(())
         }));
