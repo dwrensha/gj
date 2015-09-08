@@ -23,7 +23,7 @@ extern crate gj;
 use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(), Box<::std::error::Error>>
+fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(), ::std::io::Error>
     where S: AsyncRead + AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
 {
     stream.try_read(buf, 1).lift().then(move |(stream, buf, n)| {
