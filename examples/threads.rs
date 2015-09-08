@@ -32,49 +32,53 @@
 extern crate gj;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn child_loop(delay: u32, stream: gj::io::unix::Stream, buf: Vec<u8>) -> gj::Promise<()> {
+fn child_loop(delay: u32,
+              stream: gj::io::unix::Stream,
+              buf: Vec<u8>) -> gj::Promise<(), gj::io::Error<(gj::io::unix::Stream, Vec<u8>)>> {
 
     // This blocks the entire thread. This is okay because we are on a child thread
     // where nothing else needs to happen.
     ::std::thread::sleep_ms(delay);
 
-    return stream.write(buf).then(move |(stream, buf)| {
-        return Ok(child_loop(delay, stream, buf));
-    });
+    stream.write(buf).then(move |(stream, buf)| {
+        Ok(child_loop(delay, stream, buf))
+    })
 }
 
-fn child(delay: u32) -> gj::Result<gj::io::unix::Stream> {
+fn child(delay: u32) -> Result<gj::io::unix::Stream, Box<::std::error::Error>> {
     let (_, stream) = try!(gj::io::unix::spawn(move |parent_stream, wait_scope| {
-        try!(child_loop(delay, parent_stream, vec![0u8]).wait(wait_scope));
+        try!(child_loop(delay, parent_stream, vec![0u8]).box_err().wait(wait_scope));
         Ok(())
     }));
     return Ok(stream);
 }
 
-fn listen_to_child(id: &'static str, stream: gj::io::unix::Stream, buf: Vec<u8>) -> gj::Promise<()> {
-    return stream.read(buf, 1).then(move |(stream, buf, _n)| {
+fn listen_to_child(id: &'static str,
+                   stream: gj::io::unix::Stream,
+                   buf: Vec<u8>) -> gj::Promise<(), gj::io::Error<(gj::io::unix::Stream, Vec<u8>)>> {
+    stream.read(buf, 1).then(move |(stream, buf, _n)| {
         println!("heard back from {}", id);
-        return Ok(listen_to_child(id, stream, buf));
-    });
+        Ok(listen_to_child(id, stream, buf))
+    })
 }
 
-fn parent_wait_loop() -> gj::Promise<()> {
+fn parent_wait_loop() -> gj::Promise<(), ::std::io::Error> {
     println!("parent wait loop...");
 
     // If we used ::std::thread::sleep_ms() here, we would block the main event loop.
-    return gj::io::Timer.after_delay_ms(3000).then(|()| {
-        return Ok(parent_wait_loop());
-    });
+    gj::io::Timer.after_delay_ms(3000).then(|()| {
+        Ok(parent_wait_loop())
+    })
 }
 
 pub fn main() {
     gj::EventLoop::top_level(|wait_scope| {
 
         let children = vec![
-            parent_wait_loop(),
-            listen_to_child("CHILD 1", try!(child(700)), vec![0]),
-            listen_to_child("CHILD 2", try!(child(1900)), vec![0]),
-            listen_to_child("CHILD 3", try!(child(2600)), vec![0])];
+            parent_wait_loop().box_err(),
+            listen_to_child("CHILD 1", try!(child(700)), vec![0]).box_err(),
+            listen_to_child("CHILD 2", try!(child(1900)), vec![0]).box_err(),
+            listen_to_child("CHILD 3", try!(child(2600)), vec![0]).box_err()];
 
         try!(gj::join_promises(children).wait(wait_scope));
 

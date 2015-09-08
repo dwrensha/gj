@@ -29,6 +29,7 @@ extern crate nix;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::result::Result;
 use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
 
@@ -37,16 +38,14 @@ pub mod io;
 mod private;
 mod handle_table;
 
-pub type Error = Box<::std::error::Error>;
-pub type Result<T> = ::std::result::Result<T, Error>;
-
+pub struct Forced;
 
 /// A computation that might eventually resolve to a value of type `T`.
-pub struct Promise<T> where T: 'static {
-    node : Box<PromiseNode<T>>,
+pub struct Promise<T, E> where T: 'static, E: 'static {
+    node: Box<PromiseNode<T, E>>,
 }
 
-impl <T> Promise <T> {
+impl <T, E> Promise <T, E> {
     /// Chains further computation to be executed once the promise resolves.
     /// When the promise is fulfilled successfully, invokes `func` on its result.
     /// When the promise is rejected, invokes `error_handler` on the resulting error.
@@ -56,67 +55,81 @@ impl <T> Promise <T> {
     ///
     /// Always returns immediately, even if the promise is already resolved. The earliest that
     /// `func` or `error_handler` might be invoked is during the next `turn()` of the event loop.
-    pub fn then_else<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
+    pub fn then_else<F, R, E1>(self, func: F) -> Promise<R, E1>
         where F: 'static,
-              F: FnOnce(T) -> Result<Promise<R>>,
-              G: 'static,
-              G: FnOnce(Error) -> Result<Promise<R>>,
+              F: FnOnce(Result<T, E>) -> Result<Promise<R, E1>, E1>,
               R: 'static
     {
-        let intermediate = Box::new(promise_node::Transform::new(self.node, func, error_handler));
+        let intermediate = Box::new(promise_node::Transform::new(self.node, func));
         Promise { node: Box::new(promise_node::Chain::new(intermediate)) }
     }
 
     /// Calls `then_else()` with a default error handler that simply propagates all errors.
-    pub fn then<F, R>(self, func: F) -> Promise<R>
+    pub fn then<F, R>(self, func: F) -> Promise<R, E>
         where F: 'static,
-              F: FnOnce(T) -> Result<Promise<R>>,
-              R: 'static
+              F: FnOnce(T) -> Result<Promise<R, E>, E>,
+              R: 'static,
     {
-        self.then_else(func, |e| { return Err(e); })
+        self.then_else(|r| { match r { Ok(v) => func(v), Err(e) => Err(e) } })
     }
 
     /// Like then_else() but for a `func` that returns a direct value rather than a promise.
-    pub fn map_else<F, G, R>(self, func: F, error_handler: G) -> Promise<R>
+    pub fn map_else<F, R, E1>(self, func: F) -> Promise<R, E1>
         where F: 'static,
-              F: FnOnce(T) -> Result<R>,
-              G: 'static,
-              G: FnOnce(Error) -> Result<R>,
-              R: 'static
+              F: FnOnce(Result<T, E>) -> Result<R, E1>,
+              R: 'static,
+              E1: 'static
     {
-        Promise { node: Box::new(promise_node::Transform::new(self.node, func, error_handler)) }
+        Promise { node: Box::new(promise_node::Transform::new(self.node, func)) }
     }
 
     /// Calls `map_else()` with a default error handler that simple propagates all errors.
-    pub fn map<F, R>(self, func: F) -> Promise<R>
+    pub fn map<F, R>(self, func: F) -> Promise<R, E>
         where F: 'static,
-              F: FnOnce(T) -> Result<R>,
+              F: FnOnce(T) -> Result<R, E>,
               R: 'static
     {
-        self.map_else(func, |e| { return Err(e); })
+        self.map_else(|r| { match r { Ok(v) => func(v), Err(e) =>  Err(e) } } )
+    }
+
+    pub fn map_err<E1, F>(self, func: F) -> Promise<T, E1>
+        where F: 'static,
+              F: FnOnce(E) -> E1
+    {
+        self.map_else(|r| { match r { Ok(v) => Ok(v), Err(e) =>  Err(func(e)) } } )
+    }
+
+    pub fn box_err(self) -> Promise<T, Box<::std::error::Error>> where E: Into<Box<::std::error::Error>> {
+        self.map_err(|e| e.into())
+    }
+
+    /// Cancels the promise, returning its value if it has already been fulfilled. If the promise has not
+    /// already been fulfilled, the result must be an Err.
+    pub fn force(self) -> Result<T, E> {
+        self.node.force()
     }
 
     /// Returns a new promise that resolves when either `self` or `other` resolves. The promise that
     /// doesn't resolve first is cancelled.
-    pub fn exclusive_join(self, other: Promise<T>) -> Promise<T> {
-        return Promise { node: Box::new(private::promise_node::ExclusiveJoin::new(self.node, other.node)) };
+    pub fn exclusive_join(self, other: Promise<T, E>) -> Promise<T, E> {
+        Promise { node: Box::new(private::promise_node::ExclusiveJoin::new(self.node, other.node)) }
     }
 
     /// Creates a new promise that has already been fulfilled.
-    pub fn fulfilled(value: T) -> Promise<T> {
-        return Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) };
+    pub fn fulfilled(value: T) -> Promise<T, E> {
+        Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) }
     }
 
     /// Creates a new promise that has already been rejected with the given error.
-    pub fn rejected(error: Error) -> Promise<T> {
-        return Promise { node: Box::new(promise_node::Immediate::new(Err(error))) };
+    pub fn rejected(error: E) -> Promise<T, E> {
+        Promise { node: Box::new(promise_node::Immediate::new(Err(error))) }
     }
 
     /// Runs the event loop until the promise is fulfilled.
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
     /// Waiting within event callbacks is disallowed.
-    pub fn wait(mut self, _wait_scope: &WaitScope) -> Result<T> {
+    pub fn wait(mut self, _wait_scope: &WaitScope) -> Result<T, E> {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
@@ -179,8 +192,8 @@ pub struct EventLoop {
 impl EventLoop {
     /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
     /// closure and then drops the event loop.
-    pub fn top_level<F>(main: F) -> Result<()>
-        where F: FnOnce(&WaitScope) -> Result<()>
+    pub fn top_level<F>(main: F) -> Result<(), Box<::std::error::Error>>
+        where F: FnOnce(&WaitScope) -> Result<(), Box<::std::error::Error>>
     {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
         let dummy = private::EventNode { event: None, next: None, prev: None };
@@ -285,15 +298,18 @@ impl EventLoop {
 }
 
 /// A callback that can be used to fulfill or reject a promise.
-pub trait PromiseFulfiller<T> where T: 'static {
+pub trait PromiseFulfiller<T, E> where T: 'static, E: 'static, E: From<Forced> {
     fn fulfill(self: Box<Self>, value: T);
-    fn reject(self: Box<Self>, error: Error);
+    fn reject(self: Box<Self>, error: E);
 }
 
 /// Creates a new promise/fulfiller pair.
-pub fn new_promise_and_fulfiller<T>() -> (Promise<T>, Box<PromiseFulfiller<T>>) where T: 'static {
+pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, Box<PromiseFulfiller<T, E>>)
+    where T: 'static,
+          E: 'static + From<Forced>
+{
     let result = ::std::rc::Rc::new(::std::cell::RefCell::new(PromiseAndFulfillerHub::new()));
-    let result_promise : Promise<T> = Promise { node: Box::new(result.clone())};
+    let result_promise: Promise<T, E> = Promise { node: Box::new(result.clone())};
     (result_promise, Box::new(result))
 }
 
@@ -309,18 +325,31 @@ impl TaskSet {
         TaskSet { task_set_impl : Rc::new(RefCell::new(private::TaskSetImpl::new(error_handler))) }
     }
 
-    pub fn add(&mut self, promise: Promise<()>) {
+    pub fn add(&mut self, promise: Promise<(), Box<::std::error::Error>>) {
         private::TaskSetImpl::add(self.task_set_impl.clone(), promise.node);
     }
 }
 
 /// A callback to be invoked when a task in a `TaskSet` fails.
 pub trait ErrorHandler {
-    fn task_failed(&mut self, error: Error);
+    fn task_failed(&mut self, error: Box<::std::error::Error>);
 }
 
 /// Transforms a vector of promises into a promise for a vector.
-pub fn join_promises<T>(promises: Vec<Promise<T>>) -> Promise<Vec<T>> {
+pub fn join_promises<T, E>(promises: Vec<Promise<T, E>>) -> Promise<Vec<T>, E>
+{
     let nodes = promises.into_iter().map(|p| { p.node }).collect();
     Promise { node: Box::new(private::promise_node::ArrayJoin::new(nodes)) }
+}
+
+impl From<Forced> for ::std::io::Error {
+    fn from(_: Forced) -> ::std::io::Error {
+        ::std::io::Error::new(::std::io::ErrorKind::Other, "forced unfulfilled promise")
+    }
+}
+
+impl From<Forced> for Box<::std::error::Error> {
+    fn from(_: Forced) -> Box<::std::error::Error> {
+        ::std::io::Error::new(::std::io::ErrorKind::Other, "forced unfulfilled promise").into()
+    }
 }

@@ -22,8 +22,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::HashMap;
+use std::result::Result;
 use handle_table::{Handle};
-use {Error, Result, PromiseFulfiller, EventLoop, ErrorHandler};
+use {PromiseFulfiller, EventLoop, ErrorHandler, Forced};
 
 pub mod promise_node;
 
@@ -40,12 +41,13 @@ pub fn with_current_event_loop<F, R>(f: F) -> R
     })
 }
 
-pub trait PromiseNode<T> {
+pub trait PromiseNode<T, E> {
     /// Arms the given event when the promised value is ready.
     fn on_ready(&mut self, event: EventHandle);
 
     fn set_self_pointer(&mut self) {}
-    fn get(self: Box<Self>) -> Result<T>;
+    fn get(self: Box<Self>) -> Result<T, E>;
+    fn force(self: Box<Self>) -> Result<T, E>;
 }
 
 pub trait Event {
@@ -187,18 +189,18 @@ impl OnReadyEvent {
     }
 }
 
-pub struct PromiseAndFulfillerHub<T> where T: 'static {
-    result: Option<Result<T>>,
+pub struct PromiseAndFulfillerHub<T, E> where T: 'static, E: 'static + From<Forced> {
+    result: Option<Result<T, E>>,
     on_ready_event: OnReadyEvent,
 }
 
-impl <T> PromiseAndFulfillerHub<T> {
-    pub fn new() -> PromiseAndFulfillerHub<T> {
-        PromiseAndFulfillerHub { result: None::<Result<T>>, on_ready_event: OnReadyEvent::Empty }
+impl <T, E> PromiseAndFulfillerHub<T, E> where E: From<Forced> {
+    pub fn new() -> PromiseAndFulfillerHub<T, E> {
+        PromiseAndFulfillerHub { result: None::<Result<T, E>>, on_ready_event: OnReadyEvent::Empty }
     }
 }
 
-impl <T> PromiseAndFulfillerHub<T> {
+impl <T, E> PromiseAndFulfillerHub<T, E> where E: From<Forced> {
     fn fulfill(&mut self, value: T) {
         if self.result.is_none() {
             self.result = Some(Ok(value));
@@ -206,31 +208,38 @@ impl <T> PromiseAndFulfillerHub<T> {
         self.on_ready_event.arm();
     }
 
-    fn reject(&mut self, error: Error) {
+    fn reject(&mut self, error: E) {
         if self.result.is_none() {
             self.result = Some(Err(error));
         }
     }
 }
 
-impl <T> PromiseNode<T> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T>>> {
+impl <T, E> PromiseNode<T, E> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>>
+    where E: From<Forced>
+{
     fn on_ready(&mut self, event: EventHandle) {
         self.borrow_mut().on_ready_event.init(event);
     }
-    fn get(self: Box<Self>) -> Result<T> {
+    fn get(self: Box<Self>) -> Result<T, E> {
         match ::std::mem::replace(&mut self.borrow_mut().result, None) {
             None => panic!("no result!"),
             Some(r) => r
         }
     }
+    fn force(self: Box<Self>) -> Result<T, E> {
+        Err(E::from(Forced))
+    }
 }
 
-impl <T> PromiseFulfiller<T> for Rc<RefCell<PromiseAndFulfillerHub<T>>> where T: 'static {
+impl <T, E> PromiseFulfiller<T, E> for Rc<RefCell<PromiseAndFulfillerHub<T, E>>>
+    where T: 'static, E: 'static + From<Forced>
+{
     fn fulfill(self: Box<Self>, value: T) {
         self.borrow_mut().fulfill(value);
     }
 
-    fn reject(self: Box<Self>, error: Error) {
+    fn reject(self: Box<Self>, error: E) {
         self.borrow_mut().reject(error);
     }
 }
@@ -246,7 +255,7 @@ impl TaskSetImpl {
                       tasks: HashMap::new() }
     }
 
-      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<()>>) {
+      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<(), Box<::std::error::Error>>>) {
           let (handle, dropper) = EventHandle::new();
           node.on_ready(handle);
           let task = Task { task_set: task_set.clone(), node: Some(node), event_handle: handle };
@@ -257,7 +266,7 @@ impl TaskSetImpl {
 
 pub struct Task {
     task_set: Rc<RefCell<TaskSetImpl>>,
-    node: Option<Box<PromiseNode<()>>>,
+    node: Option<Box<PromiseNode<(), Box<::std::error::Error>>>>,
     event_handle: EventHandle,
 }
 

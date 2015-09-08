@@ -23,45 +23,48 @@ extern crate gj;
 use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
 
-fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<()>
+fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(), Box<::std::error::Error>>
     where R: AsyncRead, W: AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
 {
-    return src.try_read(buf, 1).then(move |(src, buf, n)| {
+    src.try_read(buf, 1).box_err().then(move |(src, buf, n)| {
         if n == 0 {
             // EOF
-            return Ok(gj::Promise::fulfilled(()));
+            Ok(gj::Promise::fulfilled(()))
         } else {
-            return Ok(dst.write(gj::io::Slice::new(buf, n)).then(move |(dst, slice)| {
-                return Ok(forward(src, dst, slice.buf));
-            }));
+            Ok(dst.write(gj::io::Slice::new(buf, n)).box_err().then(move |(dst, slice)| {
+                Ok(forward(src, dst, slice.buf))
+            }))
         }
-    });
+    })
 }
 
 fn accept_loop(receiver: gj::io::tcp::Listener,
                outbound_addr: ::std::net::SocketAddr,
-               mut task_set: gj::TaskSet) -> gj::Promise<()> {
-    return receiver.accept().then(move |(receiver, src_stream)| {
+               mut task_set: gj::TaskSet) -> gj::Promise<(), Box<::std::error::Error>> {
+    receiver.accept().box_err().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
-        return Ok(gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::Stream::connect(outbound_addr))
-                .then_else(move |dst_stream| {
-                    task_set.add(forward(try!(src_stream.try_clone()),
-                                         try!(dst_stream.try_clone()),
-                                         vec![0; 1024]));
-                    task_set.add(forward(dst_stream, src_stream, vec![0; 1024]));
-                    return Ok(accept_loop(receiver, outbound_addr, task_set));
-                }, |e| {
-                    println!("failed to connect: {}", e);
-                    return Err(e);
-                }));
-    });
+        Ok(gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::Stream::connect(outbound_addr))
+           .then_else(move |r| match r {
+               Ok(dst_stream) =>  {
+                   task_set.add(forward(try!(src_stream.try_clone()),
+                                        try!(dst_stream.try_clone()),
+                                        vec![0; 1024]).box_err());
+                   task_set.add(forward(dst_stream, src_stream, vec![0; 1024]).box_err());
+                   Ok(accept_loop(receiver, outbound_addr, task_set).box_err())
+               }
+               Err(e) => {
+                   println!("failed to connect: {}", e);
+                   Err(e.into())
+               }
+           }))
+    })
 }
 
 pub struct Reporter;
 
 impl gj::ErrorHandler for Reporter {
-    fn task_failed(&mut self, error: gj::Error) {
+    fn task_failed(&mut self, error: Box<::std::error::Error>) {
         println!("Task failed: {}", error);
     }
 }

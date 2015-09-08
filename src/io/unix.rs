@@ -20,10 +20,12 @@
 // THE SOFTWARE.
 
 use std::ops::{DerefMut, Deref};
+use std::result::Result;
 use handle_table::{Handle};
 use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
-           FdObserver, HasHandle, register_new_handle};
-use {EventLoop, Promise, Result, WaitScope};
+           FdObserver, HasHandle, register_new_handle,
+           Error};
+use {EventLoop, Promise, WaitScope};
 use private::{with_current_event_loop};
 
 pub struct Stream {
@@ -43,7 +45,7 @@ impl Drop for Listener {
 }
 
 impl Listener {
-    pub fn bind<P: AsRef<::std::path::Path>>(addr: P) -> Result<Listener> {
+    pub fn bind<P: AsRef<::std::path::Path>>(addr: P) -> Result<Listener, ::std::io::Error> {
         let listener = try!(::mio::unix::UnixListener::bind(&addr));
         let handle = FdObserver::new();
 
@@ -51,31 +53,37 @@ impl Listener {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
-            Ok(Listener { listener: listener,
-                          handle: handle })
+            Ok(Listener { listener: listener, handle: handle })
         });
     }
 
-    fn accept_internal(self) -> Result<Promise<(Listener, Stream)>> {
-        let accept_result = try!(self.listener.accept());
+    fn accept_internal(self) -> Result<Promise<(Listener, Stream), Error<Listener>>, Error<Listener>> {
+        let accept_result = match self.listener.accept() {
+            Err(e) => return Err(Error::new(self, e)),
+            Ok(v) => v,
+        };
         match accept_result {
             Some(stream) => {
-                let handle = try!(register_new_handle(&stream));
-                return Ok(Promise::fulfilled((self, Stream::new(stream, handle))));
+                let handle = match register_new_handle(&stream) {
+                    Err(e) => return Err(Error::new(self, e)),
+                    Ok(v) => v,
+                };
+                Ok(Promise::fulfilled((self, Stream::new(stream, handle))))
             }
             None => {
-                return with_current_event_loop(move |event_loop| {
+                with_current_event_loop(move |event_loop| {
                     let promise =
                         event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
-                    return Ok(promise.then(move |()| {
-                        return self.accept_internal();
-                    }));
-                });
+                    Ok(promise.then_else(move |r| match r {
+                        Ok(()) => self.accept_internal(),
+                        Err(e) => Err(Error::new(self, e))
+                    }))
+                })
             }
         }
     }
 
-    pub fn accept(self) -> Promise<(Listener, Stream)> {
+    pub fn accept(self) -> Promise<(Listener, Stream), Error<Listener>> {
         return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
     }
 }
@@ -103,7 +111,7 @@ impl Stream {
         Stream { stream: stream, handle: handle }
     }
 
-    pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<Stream> {
+    pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<Stream, ::std::io::Error> {
         let connect_result = ::mio::unix::UnixStream::connect(&addr);
         return Promise::fulfilled(()).then(move |()| {
             let stream = try!(connect_result);
@@ -124,13 +132,13 @@ impl Stream {
         });
     }
 
-    pub fn try_clone(&self) -> Result<Stream> {
+    pub fn try_clone(&self) -> Result<Stream, ::std::io::Error> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
         return Ok(Stream::new(stream, handle));
     }
 
-    pub unsafe fn from_raw_fd(fd: ::std::os::unix::io::RawFd) -> Result<Stream> {
+    pub unsafe fn from_raw_fd(fd: ::std::os::unix::io::RawFd) -> Result<Stream, ::std::io::Error> {
         let stream = ::std::os::unix::io::FromRawFd::from_raw_fd(fd);
         let handle = try!(register_new_handle(&stream));
         return Ok(Stream::new(stream, handle));
@@ -139,7 +147,9 @@ impl Stream {
 
 impl AsyncRead for Stream {
     fn try_read<T>(self, buf: T,
-               min_bytes: usize) -> Promise<(Self, T, usize)> where T: DerefMut<Target=[u8]> {
+                   min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
+        where T: DerefMut<Target=[u8]>
+    {
         return Promise::fulfilled(()).then(move |()| {
             return try_read_internal(self, buf, 0, min_bytes);
         });
@@ -147,7 +157,7 @@ impl AsyncRead for Stream {
 }
 
 impl AsyncWrite for Stream {
-    fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]> {
+    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: Deref<Target=[u8]> {
         return Promise::fulfilled(()).then(move |()| {
             return write_internal(self, buf, 0);
         });
@@ -157,8 +167,8 @@ impl AsyncWrite for Stream {
 /// Creates a new thread and sets up a socket pair that can be used to communicate with it.
 /// Passes one of the sockets to the thread's start function and returns the other socket.
 /// The new thread will already have an active event loop when `start_func` is called.
-pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream)>
-    where F: FnOnce(Stream, &WaitScope) -> Result<()>,
+pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream), Box<::std::error::Error>>
+    where F: FnOnce(Stream, &WaitScope) -> Result<(), Box<::std::error::Error>>,
           F: Send + 'static
 {
     use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};

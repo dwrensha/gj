@@ -23,78 +23,79 @@
 
 use std::rc::Rc;
 use std::cell::RefCell;
-use {Result, Error, Promise};
+use std::result::Result;
+use {Promise};
 use private::{Event, EventDropper, EventHandle, OnReadyEvent, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
 /// function (implements `then()`).
-pub struct Transform<T, DepT, Func, ErrorFunc>
-where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
-    dependency: Box<PromiseNode<DepT>>,
+pub struct Transform<T, E, E1, DepT, Func>
+where Func: FnOnce(Result<DepT, E>) -> Result<T, E1> {
+    dependency: Box<PromiseNode<DepT, E>>,
     func: Func,
-    error_handler: ErrorFunc,
 }
 
-impl <T, DepT, Func, ErrorFunc> Transform<T, DepT, Func, ErrorFunc>
-where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
-    pub fn new(dependency: Box<PromiseNode<DepT>>, func: Func, error_handler: ErrorFunc)
-           -> Transform<T, DepT, Func, ErrorFunc> {
-        Transform { dependency : dependency,
-                    func: func, error_handler: error_handler }
+impl <T, E, E1, DepT, Func> Transform<T, E, E1, DepT, Func>
+    where Func: FnOnce(Result<DepT, E>) -> Result<T, E1>
+{
+    pub fn new(dependency: Box<PromiseNode<DepT, E>>, func: Func) -> Transform<T, E, E1, DepT, Func> {
+        Transform { dependency: dependency, func: func}
     }
 }
 
-impl <T, DepT, Func, ErrorFunc> PromiseNode<T> for Transform<T, DepT, Func, ErrorFunc>
-where Func: FnOnce(DepT) -> Result<T>, ErrorFunc: FnOnce(Error) -> Result<T> {
+impl <T, E, E1, DepT, Func> PromiseNode<T, E1> for Transform<T, E, E1, DepT, Func>
+    where Func: FnOnce(Result<DepT, E>) -> Result<T, E1>
+{
     fn on_ready(&mut self, event: EventHandle) {
         self.dependency.on_ready(event);
     }
-    fn get(self: Box<Self>) -> Result<T> {
+    fn get(self: Box<Self>) -> Result<T, E1> {
         let tmp = *self;
-        let Transform {dependency, func, error_handler} = tmp;
-        match dependency.get() {
-            Ok(value) => {
-                func(value)
-            }
-            Err(e) => {
-                error_handler(e)
-            }
-        }
+        let Transform {dependency, func} = tmp;
+        func(dependency.get())
+    }
+    fn force(self: Box<Self>) -> Result<T, E1> {
+        let tmp = *self;
+        let Transform {dependency, func} = tmp;
+        func(dependency.force())
     }
 }
 
 /// A promise that has already been resolved to an immediate value or error.
-pub struct Immediate<T> {
-    result: Result<T>,
+pub struct Immediate<T, E> {
+    result: Result<T, E>,
 }
 
-impl <T> Immediate<T> {
-    pub fn new(result: Result<T>) -> Immediate<T> {
+impl <T, E> Immediate<T, E> {
+    pub fn new(result: Result<T, E>) -> Immediate<T, E> {
         Immediate { result: result }
     }
 }
 
-impl <T> PromiseNode<T> for Immediate<T> {
+impl <T, E> PromiseNode<T, E> for Immediate<T, E> {
     fn on_ready(&mut self, event: EventHandle) {
         event.arm_breadth_first();
     }
-    fn get(self: Box<Self>) -> Result<T> {
+    fn get(self: Box<Self>) -> Result<T, E> {
+        self.result
+    }
+    fn force(self: Box<Self>) -> Result<T, E> {
         self.result
     }
 }
 
-enum ChainState<T> {
-    Step1(Box<PromiseNode<Promise<T>>>, Option<EventHandle>),
-    Step2(Box<PromiseNode<T>>, Option<EventHandle>),
+enum ChainState<T, E> {
+    Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>),
+    Step2(Box<PromiseNode<T, E>>, Option<EventHandle>),
     Step3 // done
 }
 
-struct ChainEvent<T> {
-    state: Rc<RefCell<ChainState<T>>>,
+struct ChainEvent<T, E> {
+    state: Rc<RefCell<ChainState<T, E>>>,
 }
 
-impl <T> Event for ChainEvent<T> where T: 'static {
+impl <T, E> Event for ChainEvent<T, E> where T: 'static, E: 'static {
     fn fire(&mut self) -> Option<EventDropper> {
         let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
         match state {
@@ -130,13 +131,13 @@ impl <T> Event for ChainEvent<T> where T: 'static {
 }
 
 /// Promise node that reduces Promise<Promise<T>> to Promise<T>.
-pub struct Chain<T> {
-    state: Rc<RefCell<ChainState<T>>>,
+pub struct Chain<T, E> where T: 'static, E: 'static {
+    state: Rc<RefCell<ChainState<T, E>>>,
     dropper: EventDropper,
 }
 
-impl <T> Chain<T> where T: 'static {
-    pub fn new(mut inner: Box<PromiseNode<Promise<T>>>) -> Chain<T> {
+impl <T, E> Chain<T, E> {
+    pub fn new(mut inner: Box<PromiseNode<Promise<T, E>, E>>) -> Chain<T, E> {
 
         let state = Rc::new(RefCell::new(ChainState::Step3));
         let event = Box::new(ChainEvent { state: state.clone() });
@@ -149,7 +150,7 @@ impl <T> Chain<T> where T: 'static {
     }
 }
 
-impl <T> PromiseNode<T> for Chain<T> {
+impl <T, E> PromiseNode<T, E> for Chain<T, E> {
     fn on_ready(&mut self, event: EventHandle) {
         match &mut *self.state.borrow_mut() {
             &mut ChainState::Step2(ref mut inner, _) => {
@@ -164,11 +165,28 @@ impl <T> PromiseNode<T> for Chain<T> {
             _ => { panic!() }
         }
     }
-    fn get(self: Box<Self>) -> Result<T> {
+    fn get(self: Box<Self>) -> Result<T, E> {
         let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
         match state {
             ChainState::Step2(inner, _) => {
                 inner.get()
+            }
+            _ => {
+                panic!()
+            }
+        }
+    }
+    fn force(self: Box<Self>) -> Result<T, E> {
+        let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
+        match state {
+            ChainState::Step1(inner, _) => {
+                match inner.force() {
+                    Ok(p) => p.force(),
+                    Err(e) => Err(e)
+                }
+            }
+            ChainState::Step2(inner, _) => {
+                inner.force()
             }
             _ => {
                 panic!()
@@ -198,13 +216,13 @@ struct ArrayJoinState {
     on_ready_event: OnReadyEvent,
 }
 
-pub struct ArrayJoin<T> {
+pub struct ArrayJoin<T, E> {
     state: Rc<RefCell<ArrayJoinState>>,
-    branches: Vec<(Box<PromiseNode<T>>, EventDropper)>,
+    branches: Vec<(Box<PromiseNode<T, E>>, EventDropper)>,
 }
 
-impl<T> ArrayJoin<T> {
-    pub fn new(nodes: Vec<Box<PromiseNode<T>>>) -> ArrayJoin<T> {
+impl<T, E> ArrayJoin<T, E> {
+    pub fn new(nodes: Vec<Box<PromiseNode<T, E>>>) -> ArrayJoin<T, E> {
         let state = Rc::new(RefCell::new(ArrayJoinState { count_left: nodes.len(),
                                                           on_ready_event: OnReadyEvent::Empty }));
         let branches =
@@ -219,27 +237,30 @@ impl<T> ArrayJoin<T> {
     }
 }
 
-impl <T> PromiseNode<Vec<T>> for ArrayJoin<T> {
+impl <T, E> PromiseNode<Vec<T>, E> for ArrayJoin<T, E> {
     fn on_ready(&mut self, event: EventHandle) {
         self.state.borrow_mut().on_ready_event.init(event);
     }
-    fn get(self: Box<Self>) -> Result<Vec<T>> {
+    fn get(self: Box<Self>) -> Result<Vec<T>, E> {
         let mut result = Vec::new();
         for (dependency, _dropper) in self.branches {
             result.push(try!(dependency.get()));
         }
         return Ok(result);
     }
+    fn force(self: Box<Self>) -> Result<Vec<T>, E> {
+        unimplemented!()
+    }
 }
 
 enum ExclusiveJoinSide { Left, Right }
 
-struct ExclusiveJoinBranch<T> {
-    state: Rc<RefCell<ExclusiveJoinState<T>>>,
+struct ExclusiveJoinBranch<T, E> {
+    state: Rc<RefCell<ExclusiveJoinState<T, E>>>,
     side: ExclusiveJoinSide,
 }
 
-impl<T> Event for ExclusiveJoinBranch<T> {
+impl<T, E> Event for ExclusiveJoinBranch<T, E> {
     fn fire(&mut self) -> Option<EventDropper> {
         let state = &mut *self.state.borrow_mut();
         match self.side {
@@ -255,19 +276,19 @@ impl<T> Event for ExclusiveJoinBranch<T> {
     }
 }
 
-struct ExclusiveJoinState<T> {
+struct ExclusiveJoinState<T, E> {
     on_ready_event: OnReadyEvent,
-    left: Option<(Box<PromiseNode<T>>, EventDropper)>,
-    right: Option<(Box<PromiseNode<T>>, EventDropper)>,
+    left: Option<(Box<PromiseNode<T, E>>, EventDropper)>,
+    right: Option<(Box<PromiseNode<T, E>>, EventDropper)>,
 
 }
 
-pub struct ExclusiveJoin<T> where T: 'static {
-    state: Rc<RefCell<ExclusiveJoinState<T>>>,
+pub struct ExclusiveJoin<T, E> where T: 'static, E: 'static {
+    state: Rc<RefCell<ExclusiveJoinState<T, E>>>,
 }
 
-impl<T> ExclusiveJoin<T> {
-    pub fn new(mut left: Box<PromiseNode<T>>, mut right: Box<PromiseNode<T>>) -> ExclusiveJoin<T> {
+impl<T, E> ExclusiveJoin<T, E> {
+    pub fn new(mut left: Box<PromiseNode<T, E>>, mut right: Box<PromiseNode<T, E>>) -> ExclusiveJoin<T, E> {
 
         let state = Rc::new(RefCell::new(ExclusiveJoinState {
             on_ready_event: OnReadyEvent::Empty,
@@ -295,11 +316,11 @@ impl<T> ExclusiveJoin<T> {
     }
 }
 
-impl <T> PromiseNode<T> for ExclusiveJoin<T> {
+impl <T, E> PromiseNode<T, E> for ExclusiveJoin<T, E> {
     fn on_ready(&mut self, event: EventHandle) {
         self.state.borrow_mut().on_ready_event.init(event);
     }
-    fn get(self: Box<Self>) -> Result<T> {
+    fn get(self: Box<Self>) -> Result<T, E> {
         let left = ::std::mem::replace(&mut self.state.borrow_mut().left, None);
         let right = ::std::mem::replace(&mut self.state.borrow_mut().right, None);
 
@@ -315,25 +336,31 @@ impl <T> PromiseNode<T> for ExclusiveJoin<T> {
             }
         }
     }
+    fn force(self: Box<Self>) -> Result<T, E> {
+        unimplemented!()
+    }
 }
 
-pub struct Wrapper<T, U> where T: 'static {
-    node: Box<PromiseNode<T>>,
+pub struct Wrapper<T, U, E> where T: 'static, E: 'static {
+    node: Box<PromiseNode<T, E>>,
     inner: U,
 }
 
-impl <T, U> Wrapper<T, U> {
-    pub fn new(node: Box<PromiseNode<T>>, inner: U) -> Wrapper<T, U> {
+impl <T, U, E> Wrapper<T, U, E> {
+    pub fn new(node: Box<PromiseNode<T, E>>, inner: U) -> Wrapper<T, U, E> {
         Wrapper { node: node, inner: inner }
     }
 }
 
-impl <T, U> PromiseNode<T> for Wrapper<T, U> {
+impl <T, U, E> PromiseNode<T, E> for Wrapper<T, U, E> {
     fn on_ready(&mut self, event: EventHandle) {
         self.node.on_ready(event);
     }
-    fn get(self: Box<Self>) -> Result<T> {
+    fn get(self: Box<Self>) -> Result<T, E> {
         self.node.get()
+    }
+    fn force(self: Box<Self>) -> Result<T, E> {
+        self.node.force()
     }
 }
 

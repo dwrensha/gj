@@ -22,8 +22,9 @@
 //! Asynchronous input and output.
 
 use std::ops::{DerefMut, Deref};
+use std::result::Result;
 use handle_table::{HandleTable, Handle};
-use {EventPort, Promise, PromiseFulfiller, Result, new_promise_and_fulfiller};
+use {EventPort, Promise, PromiseFulfiller, new_promise_and_fulfiller};
 use private::{with_current_event_loop};
 
 pub mod tcp;
@@ -31,26 +32,44 @@ pub mod tcp;
 #[cfg(unix)]
 pub mod unix;
 
+pub struct Error<S> {
+    pub state: S,
+    pub error: ::std::io::Error,
+}
+
+impl <S> Error<S> {
+    pub fn new(state: S, error: ::std::io::Error) -> Error<S> {
+        Error { state: state, error: error }
+    }
+}
+
+impl <S> Into<Box<::std::error::Error>> for Error<S> {
+    fn into(self) -> Box<::std::error::Error> {
+        self.error.into()
+    }
+}
+
 /// A nonblocking input bytestream.
 pub trait AsyncRead: 'static {
     /// Attempts to read `buf.len()` bytes from the stream, writing them into `buf`.
     /// Returns `self`, the modified `buf`, and the number of bytes actually read.
     /// Returns as soon as `min_bytes` are read or EOF is encountered.
-    fn try_read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
+    fn try_read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
         where T: DerefMut<Target=[u8]>;
 
     /// Like `try_read()`, but returns an error if EOF is encountered before `min_bytes`
     /// can be read.
-    fn read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize)>
+    fn read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
         where T: DerefMut<Target=[u8]>, Self: Sized
     {
-        return self.try_read(buf, min_bytes).map(move |(s, buf, n)| {
+        self.try_read(buf, min_bytes).map(move |(s, buf, n)| {
             if n < min_bytes {
-                return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other, "Premature EOF")))
+                Err(Error::new((s, buf),
+                               ::std::io::Error::new(::std::io::ErrorKind::Other, "Premature EOF")))
             } else {
-                return Ok((s, buf, n));
+                Ok((s, buf, n))
             }
-        });
+        })
     }
 }
 
@@ -58,7 +77,7 @@ pub trait AsyncRead: 'static {
 pub trait AsyncWrite: 'static {
     /// Attempts to write all `buf.len()` bytes from `buf` into the stream. Returns `self` and `buf`
     /// once all of the bytes have been written.
-    fn write<T>(self, buf: T) -> Promise<(Self, T)> where T: Deref<Target=[u8]>;
+    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: Deref<Target=[u8]>;
 }
 
 pub struct Slice<T> where T: Deref<Target=[u8]> {
@@ -79,7 +98,7 @@ impl <T> Deref for Slice<T> where T: Deref<Target=[u8]> {
     }
 }
 
-fn register_new_handle<E>(evented: &E) -> Result<Handle> where E: ::mio::Evented {
+fn register_new_handle<E>(evented: &E) -> Result<Handle, ::std::io::Error> where E: ::mio::Evented {
     let handle = FdObserver::new();
     let token = ::mio::Token(handle.val);
     return with_current_event_loop(move |event_loop| {
@@ -99,13 +118,16 @@ trait HasHandle {
 fn try_read_internal<R, T>(mut reader: R,
                            mut buf: T,
                            mut already_read: usize,
-                           min_bytes: usize) -> Result<Promise<(R, T, usize)>>
+                           min_bytes: usize) -> Result<Promise<(R, T, usize), Error<(R, T)>>, Error<(R, T)>>
     where T: DerefMut<Target=[u8]>, R: ::mio::TryRead + HasHandle
 {
     use mio::TryRead;
 
     while already_read < min_bytes {
-        let read_result = try!(reader.try_read(&mut buf[already_read..]));
+        let read_result = match reader.try_read(&mut buf[already_read..]) {
+            Err(e) => return Err(Error::new((reader, buf), e)),
+            Ok(v) => v,
+        };
         match read_result {
             Some(0) => {
                 // EOF
@@ -119,8 +141,9 @@ fn try_read_internal<R, T>(mut reader: R,
                     let promise =
                         event_loop.event_port.borrow_mut()
                         .handler.observers[reader.get_handle()].when_becomes_readable();
-                    return Ok(promise.then(move |()| {
-                        return try_read_internal(reader, buf, already_read, min_bytes);
+                    return Ok(promise.then_else(move |r| match r {
+                        Ok(()) => try_read_internal(reader, buf, already_read, min_bytes),
+                        Err(e) => Err(Error::new((reader, buf), e))
                     }));
                 });
             }
@@ -132,13 +155,16 @@ fn try_read_internal<R, T>(mut reader: R,
 
 fn write_internal<W, T>(mut writer: W,
                         buf: T,
-                        mut already_written: usize) -> Result<Promise<(W, T)>>
+                        mut already_written: usize) -> Result<Promise<(W, T), Error<(W, T)>>, Error<(W, T)>>
     where T: Deref<Target=[u8]>, W: ::mio::TryWrite + HasHandle
 {
     use mio::TryWrite;
 
     while already_written < buf.len() {
-        let write_result = try!(writer.try_write(&buf[already_written..]));
+        let write_result = match writer.try_write(&buf[already_written..]) {
+            Err(e) => return Err(Error::new((writer, buf), e)),
+            Ok(v) => v,
+        };
         match write_result {
             Some(n) => {
                 already_written += n;
@@ -148,9 +174,10 @@ fn write_internal<W, T>(mut writer: W,
                     let promise =
                         event_loop.event_port.borrow_mut()
                         .handler.observers[writer.get_handle()].when_becomes_writable();
-                    return Ok(promise.then(move |()| {
-                        return write_internal(writer, buf, already_written);
-                    }));
+                    Ok(promise.then_else(move |r| match r {
+                        Ok(()) => write_internal(writer, buf, already_written),
+                        Err(e) => Err(Error::new((writer, buf), e))
+                    }))
                 });
             }
         }
@@ -160,8 +187,8 @@ fn write_internal<W, T>(mut writer: W,
 }
 
 struct FdObserver {
-    read_fulfiller: Option<Box<PromiseFulfiller<()>>>,
-    write_fulfiller: Option<Box<PromiseFulfiller<()>>>,
+    read_fulfiller: Option<Box<PromiseFulfiller<(), ::std::io::Error>>>,
+    write_fulfiller: Option<Box<PromiseFulfiller<(), ::std::io::Error>>>,
 }
 
 impl FdObserver {
@@ -174,13 +201,13 @@ impl FdObserver {
         })
     }
 
-    pub fn when_becomes_readable(&mut self) -> Promise<()> {
+    pub fn when_becomes_readable(&mut self) -> Promise<(), ::std::io::Error> {
         let (promise, fulfiller) = new_promise_and_fulfiller();
         self.read_fulfiller = Some(fulfiller);
         return promise;
     }
 
-    pub fn when_becomes_writable(&mut self) -> Promise<()> {
+    pub fn when_becomes_writable(&mut self) -> Promise<(), ::std::io::Error> {
         let (promise, fulfiller) = new_promise_and_fulfiller();
         self.write_fulfiller = Some(fulfiller);
         return promise;
@@ -197,7 +224,7 @@ struct Handler {
 }
 
 impl MioEventPort {
-    pub fn new() -> Result<MioEventPort> {
+    pub fn new() -> Result<MioEventPort, ::std::io::Error> {
         Ok(MioEventPort {
             handler: Handler { observers: HandleTable::new() },
             reactor: try!(::mio::EventLoop::new()),
@@ -247,22 +274,27 @@ impl EventPort for MioEventPort {
 pub struct Timer;
 
 impl Timer {
-    pub fn after_delay_ms(&self, delay: u64) -> Promise<()> {
+    pub fn after_delay_ms(&self, delay: u64) -> Promise<(), ::std::io::Error> {
         let (promise, fulfiller) = new_promise_and_fulfiller();
         let timeout = Timeout { fulfiller: fulfiller };
-        return with_current_event_loop(move |event_loop| {
+        with_current_event_loop(move |event_loop| {
             let handle = event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay).unwrap();
-            return
-                Promise {
-                    node: Box::new(
-                        ::private::promise_node::Wrapper::new(promise.node,
-                                                              TimeoutDropper { handle: handle })) };
-        });
+            /* XXX mio::timer::TimerError {
+                Ok(v) => v,
+                Err(e) => return Promise::rejected(e),
+            }; */
+            Promise {
+                node: Box::new(
+                    ::private::promise_node::Wrapper::new(promise.node,
+                                                          TimeoutDropper { handle: handle })) }
+        })
     }
 
-    pub fn timeout_after_ms<T>(&self, delay: u64, promise: Promise<T>) -> Promise<T> {
+    pub fn timeout_after_ms<T>(&self, delay: u64,
+                               promise: Promise<T, ::std::io::Error>) -> Promise<T, ::std::io::Error>
+    {
         promise.exclusive_join(self.after_delay_ms(delay).map(|()| {
-            return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other, "operation timed out")))
+            Err(::std::io::Error::new(::std::io::ErrorKind::Other, "operation timed out"))
         }))
     }
 }
@@ -280,5 +312,5 @@ impl Drop for TimeoutDropper {
 }
 
 struct Timeout {
-    fulfiller: Box<PromiseFulfiller<()>>,
+    fulfiller: Box<PromiseFulfiller<(), ::std::io::Error>>,
 }
