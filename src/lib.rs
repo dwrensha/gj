@@ -40,21 +40,21 @@ mod handle_table;
 
 pub struct Forced;
 
-/// A computation that might eventually resolve to a value of type `T`.
+/// A computation that might eventually resolve to a value of type `T` or to an error
+//  of type `E`.
 pub struct Promise<T, E> where T: 'static, E: 'static {
     node: Box<PromiseNode<T, E>>,
 }
 
 impl <T, E> Promise <T, E> {
     /// Chains further computation to be executed once the promise resolves.
-    /// When the promise is fulfilled successfully, invokes `func` on its result.
-    /// When the promise is rejected, invokes `error_handler` on the resulting error.
+    /// When the promise is fulfilled or rejected, invokes `func` on its result.
     ///
     /// If the returned promise is dropped before the chained computation runs, the chained
     /// computation will be cancelled.
     ///
     /// Always returns immediately, even if the promise is already resolved. The earliest that
-    /// `func` or `error_handler` might be invoked is during the next `turn()` of the event loop.
+    /// `func` might be invoked is during the next `turn()` of the event loop.
     pub fn then_else<F, R, E1>(self, func: F) -> Promise<R, E1>
         where F: 'static,
               F: FnOnce(Result<T, E>) -> Result<Promise<R, E1>, E1>,
@@ -92,6 +92,7 @@ impl <T, E> Promise <T, E> {
         self.map_else(|r| { match r { Ok(v) => func(v), Err(e) =>  Err(e) } } )
     }
 
+    /// Transforms the error branch of the promise.
     pub fn map_err<E1, F>(self, func: F) -> Promise<T, E1>
         where F: 'static,
               F: FnOnce(E) -> E1
@@ -99,6 +100,7 @@ impl <T, E> Promise <T, E> {
         self.map_else(|r| { match r { Ok(v) => Ok(v), Err(e) =>  Err(func(e)) } } )
     }
 
+    /// Transforms the error branch into a common type that all errors should be convertible into.
     pub fn box_err(self) -> Promise<T, Box<::std::error::Error>> where E: Into<Box<::std::error::Error>> {
         self.map_err(|e| e.into())
     }
