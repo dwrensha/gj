@@ -278,11 +278,11 @@ impl Timer {
         let (promise, fulfiller) = new_promise_and_fulfiller();
         let timeout = Timeout { fulfiller: fulfiller };
         with_current_event_loop(move |event_loop| {
-            let handle = event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay).unwrap();
-            /* XXX mio::timer::TimerError {
+            let handle = match event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay) {
                 Ok(v) => v,
-                Err(e) => return Promise::rejected(e),
-            }; */
+                Err(_) => return Promise::rejected(::std::io::Error::new(::std::io::ErrorKind::Other,
+                                                                         "mio timer error"))
+            };
             Promise {
                 node: Box::new(
                     ::private::promise_node::Wrapper::new(promise.node,
