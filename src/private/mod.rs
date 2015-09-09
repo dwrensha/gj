@@ -58,17 +58,17 @@ pub struct EventHandle(pub Handle);
 
 impl EventHandle {
     pub fn new() -> (EventHandle, EventDropper) {
-        return with_current_event_loop(|event_loop| {
+        with_current_event_loop(|event_loop| {
             let node = EventNode { event: None, next: None, prev: None };
             let handle = EventHandle(event_loop.events.borrow_mut().push(node));
-            return (handle, EventDropper { event_handle: handle });
-        });
+            (handle, EventDropper { event_handle: handle })
+        })
     }
 
     pub fn set(&self, event: Box<Event>) {
-        return with_current_event_loop(|event_loop| {
+        with_current_event_loop(|event_loop| {
             event_loop.events.borrow_mut()[self.0].event = Some(event);
-        });
+        })
     }
 
     pub fn arm_breadth_first(self) {
@@ -138,7 +138,7 @@ impl BoolEvent {
 impl Event for BoolEvent {
     fn fire(&mut self) -> Option<EventDropper> {
         self.fired.set(true);
-        return None;
+        None
     }
 }
 
@@ -151,15 +151,15 @@ pub enum OnReadyEvent {
 impl OnReadyEvent {
     fn is_already_ready(&self) -> bool {
         match self {
-            &OnReadyEvent::AlreadyReady => return true,
-            _ => return false,
+            &OnReadyEvent::AlreadyReady => true,
+            _ => false,
         }
     }
 
     fn is_empty(&self) -> bool {
         match self {
-            &OnReadyEvent::Empty => return true,
-            _ => return false,
+            &OnReadyEvent::Empty => true,
+            _ => false,
         }
     }
 
@@ -275,11 +275,11 @@ impl <T, E> Event for Task<T, E> {
                 match node.get() {
                     Ok(v) => {
                         self.task_set.borrow_mut().error_handler.task_succeeded(v);
-                        return self.task_set.borrow_mut().tasks.remove(&self.event_handle);
+                        self.task_set.borrow_mut().tasks.remove(&self.event_handle)
                     }
                     Err(e) => {
                         self.task_set.borrow_mut().error_handler.task_failed(e);
-                        return None;
+                        None
                     }
                 }
             }
