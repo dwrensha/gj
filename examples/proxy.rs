@@ -46,7 +46,7 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(R,W,B), gj::io::Error<
 
 fn accept_loop(receiver: gj::io::tcp::Listener,
                outbound_addr: ::std::net::SocketAddr,
-               mut task_set: gj::TaskSet) -> gj::Promise<(), Box<::std::error::Error>> {
+               mut task_set: gj::TaskSet<::std::io::Error>) -> gj::Promise<(), ::std::io::Error> {
     receiver.accept().lift().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
@@ -57,7 +57,7 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
                                         try!(dst_stream.try_clone()),
                                         vec![0; 1024]).lift().map(|_| Ok(())));
                    task_set.add(forward(dst_stream, src_stream, vec![0; 1024]).lift().map(|_| Ok(())));
-                   Ok(accept_loop(receiver, outbound_addr, task_set).lift())
+                   Ok(accept_loop(receiver, outbound_addr, task_set))
                }
                Err(e) => {
                    println!("failed to connect: {}", e);
@@ -69,8 +69,8 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
 
 pub struct Reporter;
 
-impl gj::ErrorHandler for Reporter {
-    fn task_failed(&mut self, error: Box<::std::error::Error>) {
+impl gj::ErrorHandler<::std::io::Error> for Reporter {
+    fn task_failed(&mut self, error: ::std::io::Error) {
         println!("Task failed: {}", error);
     }
 }
@@ -89,6 +89,6 @@ pub fn main() {
         let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
         return accept_loop(listener,
                            outbound_addr,
-                           gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
+                           gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope);
     }).unwrap();
 }

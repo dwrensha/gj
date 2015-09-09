@@ -242,7 +242,7 @@ pub struct ErrorHandlerImpl {
     error_count: ::std::rc::Rc<::std::cell::Cell<u32>>,
 }
 
-impl gj::ErrorHandler for ErrorHandlerImpl {
+impl gj::ErrorHandler<Box<::std::error::Error>> for ErrorHandlerImpl {
     fn task_failed(&mut self, _error: Box<::std::error::Error>) {
         self.error_count.set(self.error_count.get() + 1);
     }

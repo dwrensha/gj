@@ -238,18 +238,18 @@ impl <T, E> PromiseFulfiller<T, E> for Rc<RefCell<PromiseAndFulfillerHub<T, E>>>
     }
 }
 
-pub struct TaskSetImpl {
-    error_handler: Box<ErrorHandler>,
+pub struct TaskSetImpl<E> where E: 'static {
+    error_handler: Box<ErrorHandler<E>>,
     tasks: HashMap<EventHandle, EventDropper>,
 }
 
-impl TaskSetImpl {
-    pub fn new(error_handler: Box<ErrorHandler>) -> TaskSetImpl {
+impl <E> TaskSetImpl <E> {
+    pub fn new(error_handler: Box<ErrorHandler<E>>) -> TaskSetImpl<E> {
         TaskSetImpl { error_handler: error_handler,
                       tasks: HashMap::new() }
     }
 
-      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<(), Box<::std::error::Error>>>) {
+      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<(), E>>) {
           let (handle, dropper) = EventHandle::new();
           node.on_ready(handle);
           let task = Task { task_set: task_set.clone(), node: Some(node), event_handle: handle };
@@ -258,13 +258,13 @@ impl TaskSetImpl {
     }
 }
 
-pub struct Task {
-    task_set: Rc<RefCell<TaskSetImpl>>,
-    node: Option<Box<PromiseNode<(), Box<::std::error::Error>>>>,
+pub struct Task<E> where E: 'static {
+    task_set: Rc<RefCell<TaskSetImpl<E>>>,
+    node: Option<Box<PromiseNode<(), E>>>,
     event_handle: EventHandle,
 }
 
-impl Event for Task {
+impl <E> Event for Task<E> {
     fn fire(&mut self) -> Option<EventDropper> {
         let maybe_node = ::std::mem::replace(&mut self.node, None);
         match maybe_node {
@@ -285,4 +285,3 @@ impl Event for Task {
         }
     }
 }
-

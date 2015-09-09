@@ -41,18 +41,19 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
 }
 
 fn accept_loop(receiver: gj::io::tcp::Listener,
-               mut task_set: gj::TaskSet) -> gj::Promise<(), Box<::std::error::Error>> {
-
+               mut task_set: gj::TaskSet<::std::io::Error>)
+               -> gj::Promise<(), ::std::io::Error>
+{
     receiver.accept().lift().then(move |(receiver, stream)| {
         task_set.add(echo(stream, vec![0; 1024]).lift().map(|_| Ok(())));
-        Ok(accept_loop(receiver, task_set).lift())
+        Ok(accept_loop(receiver, task_set))
     })
 }
 
 pub struct Reporter;
 
-impl gj::ErrorHandler for Reporter {
-    fn task_failed(&mut self, error: Box<::std::error::Error>) {
+impl gj::ErrorHandler<::std::io::Error> for Reporter {
+    fn task_failed(&mut self, error: ::std::io::Error) {
         println!("Task failed: {}", error);
     }
 }
@@ -67,7 +68,7 @@ pub fn main() {
     gj::EventLoop::top_level(move |wait_scope| {
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(::gj::io::tcp::Listener::bind(addr));
-        return accept_loop(listener,
-                           gj::TaskSet::new(Box::new(Reporter))).wait(wait_scope);
+        accept_loop(listener,
+                    gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope)
     }).unwrap();
 }

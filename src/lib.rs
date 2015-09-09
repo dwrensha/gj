@@ -310,23 +310,23 @@ pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, Box<PromiseFulfiller
 
 /// Holds a collection of `Promise<()>`s and ensures that each executes to completion.
 /// Destroying a TaskSet automatically cancels all of its unfinished promises.
-pub struct TaskSet {
-    task_set_impl: Rc<RefCell<private::TaskSetImpl>>,
+pub struct TaskSet<E> where E: 'static {
+    task_set_impl: Rc<RefCell<private::TaskSetImpl<E>>>,
 }
 
-impl TaskSet {
-    pub fn new(error_handler: Box<ErrorHandler>) -> TaskSet {
+impl <E> TaskSet <E> {
+    pub fn new(error_handler: Box<ErrorHandler<E>>) -> TaskSet<E> {
         TaskSet { task_set_impl : Rc::new(RefCell::new(private::TaskSetImpl::new(error_handler))) }
     }
 
-    pub fn add(&mut self, promise: Promise<(), Box<::std::error::Error>>) {
+    pub fn add(&mut self, promise: Promise<(), E>) {
         private::TaskSetImpl::add(self.task_set_impl.clone(), promise.node);
     }
 }
 
 /// A callback to be invoked when a task in a `TaskSet` fails.
-pub trait ErrorHandler {
-    fn task_failed(&mut self, error: Box<::std::error::Error>);
+pub trait ErrorHandler<E> where E: 'static {
+    fn task_failed(&mut self, error: E);
 }
 
 /// Transforms a vector of promises into a promise for a vector.
