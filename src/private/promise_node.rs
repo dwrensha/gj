@@ -55,11 +55,6 @@ impl <T, E, E1, DepT, Func> PromiseNode<T, E1> for Transform<T, E, E1, DepT, Fun
         let Transform {dependency, func} = tmp;
         func(dependency.get())
     }
-    fn force(self: Box<Self>) -> Result<T, E1> {
-        let tmp = *self;
-        let Transform {dependency, func} = tmp;
-        func(dependency.force())
-    }
 }
 
 /// A promise that has already been resolved to an immediate value or error.
@@ -78,9 +73,6 @@ impl <T, E> PromiseNode<T, E> for Immediate<T, E> {
         event.arm_breadth_first();
     }
     fn get(self: Box<Self>) -> Result<T, E> {
-        self.result
-    }
-    fn force(self: Box<Self>) -> Result<T, E> {
         self.result
     }
 }
@@ -176,23 +168,6 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
             }
         }
     }
-    fn force(self: Box<Self>) -> Result<T, E> {
-        let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
-        match state {
-            ChainState::Step1(inner, _) => {
-                match inner.force() {
-                    Ok(p) => p.force(),
-                    Err(e) => Err(e)
-                }
-            }
-            ChainState::Step2(inner, _) => {
-                inner.force()
-            }
-            _ => {
-                panic!()
-            }
-        }
-    }
 }
 
 
@@ -247,9 +222,6 @@ impl <T, E> PromiseNode<Vec<T>, E> for ArrayJoin<T, E> {
             result.push(try!(dependency.get()));
         }
         return Ok(result);
-    }
-    fn force(self: Box<Self>) -> Result<Vec<T>, E> {
-        unimplemented!()
     }
 }
 
@@ -336,9 +308,6 @@ impl <T, E> PromiseNode<T, E> for ExclusiveJoin<T, E> {
             }
         }
     }
-    fn force(self: Box<Self>) -> Result<T, E> {
-        unimplemented!()
-    }
 }
 
 pub struct Wrapper<T, U, E> where T: 'static, E: 'static {
@@ -358,9 +327,6 @@ impl <T, U, E> PromiseNode<T, E> for Wrapper<T, U, E> {
     }
     fn get(self: Box<Self>) -> Result<T, E> {
         self.node.get()
-    }
-    fn force(self: Box<Self>) -> Result<T, E> {
-        self.node.force()
     }
 }
 

@@ -38,8 +38,6 @@ pub mod io;
 mod private;
 mod handle_table;
 
-pub struct Forced;
-
 /// A computation that might eventually resolve to a value of type `T` or to an error
 ///  of type `E`.
 pub struct Promise<T, E> where T: 'static, E: 'static {
@@ -103,12 +101,6 @@ impl <T, E> Promise <T, E> {
     /// Maps errors into a more general type.
     pub fn lift<E1>(self) -> Promise<T, E1> where E: Into<E1> {
         self.map_err(|e| e.into())
-    }
-
-    /// Cancels the promise, returning its value if it has already been fulfilled. If the promise has not
-    /// already been fulfilled, the result must be an Err.
-    pub fn force(self) -> Result<T, E> {
-        self.node.force()
     }
 
     /// Returns a new promise that resolves when either `self` or `other` resolves. The promise that
@@ -300,7 +292,7 @@ impl EventLoop {
 }
 
 /// A callback that can be used to fulfill or reject a promise.
-pub trait PromiseFulfiller<T, E> where T: 'static, E: 'static, E: From<Forced> {
+pub trait PromiseFulfiller<T, E> where T: 'static, E: 'static {
     fn fulfill(self: Box<Self>, value: T);
     fn reject(self: Box<Self>, error: E);
 }
@@ -308,7 +300,7 @@ pub trait PromiseFulfiller<T, E> where T: 'static, E: 'static, E: From<Forced> {
 /// Creates a new promise/fulfiller pair.
 pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, Box<PromiseFulfiller<T, E>>)
     where T: 'static,
-          E: 'static + From<Forced>
+          E: 'static
 {
     let result = ::std::rc::Rc::new(::std::cell::RefCell::new(PromiseAndFulfillerHub::new()));
     let result_promise: Promise<T, E> = Promise { node: Box::new(result.clone())};
@@ -342,16 +334,4 @@ pub fn join_promises<T, E>(promises: Vec<Promise<T, E>>) -> Promise<Vec<T>, E>
 {
     let nodes = promises.into_iter().map(|p| { p.node }).collect();
     Promise { node: Box::new(private::promise_node::ArrayJoin::new(nodes)) }
-}
-
-impl From<Forced> for ::std::io::Error {
-    fn from(_: Forced) -> ::std::io::Error {
-        ::std::io::Error::new(::std::io::ErrorKind::Other, "forced unfulfilled promise")
-    }
-}
-
-impl From<Forced> for Box<::std::error::Error> {
-    fn from(_: Forced) -> Box<::std::error::Error> {
-        ::std::io::Error::new(::std::io::ErrorKind::Other, "forced unfulfilled promise").into()
-    }
 }

@@ -24,7 +24,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::result::Result;
 use handle_table::{Handle};
-use {PromiseFulfiller, EventLoop, ErrorHandler, Forced};
+use {PromiseFulfiller, EventLoop, ErrorHandler};
 
 pub mod promise_node;
 
@@ -47,7 +47,6 @@ pub trait PromiseNode<T, E> {
 
     fn set_self_pointer(&mut self) {}
     fn get(self: Box<Self>) -> Result<T, E>;
-    fn force(self: Box<Self>) -> Result<T, E>;
 }
 
 pub trait Event {
@@ -189,18 +188,18 @@ impl OnReadyEvent {
     }
 }
 
-pub struct PromiseAndFulfillerHub<T, E> where T: 'static, E: 'static + From<Forced> {
+pub struct PromiseAndFulfillerHub<T, E> where T: 'static, E: 'static {
     result: Option<Result<T, E>>,
     on_ready_event: OnReadyEvent,
 }
 
-impl <T, E> PromiseAndFulfillerHub<T, E> where E: From<Forced> {
+impl <T, E> PromiseAndFulfillerHub<T, E> {
     pub fn new() -> PromiseAndFulfillerHub<T, E> {
         PromiseAndFulfillerHub { result: None::<Result<T, E>>, on_ready_event: OnReadyEvent::Empty }
     }
 }
 
-impl <T, E> PromiseAndFulfillerHub<T, E> where E: From<Forced> {
+impl <T, E> PromiseAndFulfillerHub<T, E> {
     fn fulfill(&mut self, value: T) {
         if self.result.is_none() {
             self.result = Some(Ok(value));
@@ -215,9 +214,7 @@ impl <T, E> PromiseAndFulfillerHub<T, E> where E: From<Forced> {
     }
 }
 
-impl <T, E> PromiseNode<T, E> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>>
-    where E: From<Forced>
-{
+impl <T, E> PromiseNode<T, E> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>> {
     fn on_ready(&mut self, event: EventHandle) {
         self.borrow_mut().on_ready_event.init(event);
     }
@@ -227,13 +224,10 @@ impl <T, E> PromiseNode<T, E> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndF
             Some(r) => r
         }
     }
-    fn force(self: Box<Self>) -> Result<T, E> {
-        Err(E::from(Forced))
-    }
 }
 
 impl <T, E> PromiseFulfiller<T, E> for Rc<RefCell<PromiseAndFulfillerHub<T, E>>>
-    where T: 'static, E: 'static + From<Forced>
+    where T: 'static, E: 'static
 {
     fn fulfill(self: Box<Self>, value: T) {
         self.borrow_mut().fulfill(value);
