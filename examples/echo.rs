@@ -41,7 +41,7 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
 }
 
 fn accept_loop(receiver: gj::io::tcp::Listener,
-               mut task_set: gj::TaskSet<::std::io::Error>)
+               mut task_set: gj::TaskSet<(), ::std::io::Error>)
                -> gj::Promise<(), ::std::io::Error>
 {
     receiver.accept().lift().then(move |(receiver, stream)| {
@@ -52,7 +52,7 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
 
 pub struct Reporter;
 
-impl gj::ErrorHandler<::std::io::Error> for Reporter {
+impl gj::ErrorHandler<(), ::std::io::Error> for Reporter {
     fn task_failed(&mut self, error: ::std::io::Error) {
         println!("Task failed: {}", error);
     }

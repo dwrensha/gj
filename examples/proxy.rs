@@ -46,7 +46,7 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(R,W,B), gj::io::Error<
 
 fn accept_loop(receiver: gj::io::tcp::Listener,
                outbound_addr: ::std::net::SocketAddr,
-               mut task_set: gj::TaskSet<::std::io::Error>) -> gj::Promise<(), ::std::io::Error> {
+               mut task_set: gj::TaskSet<(), ::std::io::Error>) -> gj::Promise<(), ::std::io::Error> {
     receiver.accept().lift().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
@@ -69,7 +69,7 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
 
 pub struct Reporter;
 
-impl gj::ErrorHandler<::std::io::Error> for Reporter {
+impl gj::ErrorHandler<(), ::std::io::Error> for Reporter {
     fn task_failed(&mut self, error: ::std::io::Error) {
         println!("Task failed: {}", error);
     }

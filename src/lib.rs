@@ -308,24 +308,25 @@ pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, Box<PromiseFulfiller
 }
 
 
-/// Holds a collection of `Promise<()>`s and ensures that each executes to completion.
+/// Holds a collection of `Promise<T, E>`s and ensures that each executes to completion.
 /// Destroying a TaskSet automatically cancels all of its unfinished promises.
-pub struct TaskSet<E> where E: 'static {
-    task_set_impl: Rc<RefCell<private::TaskSetImpl<E>>>,
+pub struct TaskSet<T, E> where T: 'static, E: 'static {
+    task_set_impl: Rc<RefCell<private::TaskSetImpl<T, E>>>,
 }
 
-impl <E> TaskSet <E> {
-    pub fn new(error_handler: Box<ErrorHandler<E>>) -> TaskSet<E> {
+impl <T, E> TaskSet <T, E> {
+    pub fn new(error_handler: Box<ErrorHandler<T, E>>) -> TaskSet<T, E> {
         TaskSet { task_set_impl : Rc::new(RefCell::new(private::TaskSetImpl::new(error_handler))) }
     }
 
-    pub fn add(&mut self, promise: Promise<(), E>) {
+    pub fn add(&mut self, promise: Promise<T, E>) {
         private::TaskSetImpl::add(self.task_set_impl.clone(), promise.node);
     }
 }
 
-/// A callback to be invoked when a task in a `TaskSet` fails.
-pub trait ErrorHandler<E> where E: 'static {
+/// Callbacks to be invoked when a task in a `TaskSet` finishes.
+pub trait ErrorHandler<T, E> where T: 'static, E: 'static {
+    fn task_succeeded(&mut self, _value: T) {}
     fn task_failed(&mut self, error: E);
 }
 

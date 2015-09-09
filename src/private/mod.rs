@@ -238,18 +238,18 @@ impl <T, E> PromiseFulfiller<T, E> for Rc<RefCell<PromiseAndFulfillerHub<T, E>>>
     }
 }
 
-pub struct TaskSetImpl<E> where E: 'static {
-    error_handler: Box<ErrorHandler<E>>,
+pub struct TaskSetImpl<T, E> where T: 'static, E: 'static {
+    error_handler: Box<ErrorHandler<T, E>>,
     tasks: HashMap<EventHandle, EventDropper>,
 }
 
-impl <E> TaskSetImpl <E> {
-    pub fn new(error_handler: Box<ErrorHandler<E>>) -> TaskSetImpl<E> {
+impl <T, E> TaskSetImpl <T, E> {
+    pub fn new(error_handler: Box<ErrorHandler<T, E>>) -> TaskSetImpl<T, E> {
         TaskSetImpl { error_handler: error_handler,
                       tasks: HashMap::new() }
     }
 
-      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<(), E>>) {
+      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<T, E>>) {
           let (handle, dropper) = EventHandle::new();
           node.on_ready(handle);
           let task = Task { task_set: task_set.clone(), node: Some(node), event_handle: handle };
@@ -258,13 +258,13 @@ impl <E> TaskSetImpl <E> {
     }
 }
 
-pub struct Task<E> where E: 'static {
-    task_set: Rc<RefCell<TaskSetImpl<E>>>,
-    node: Option<Box<PromiseNode<(), E>>>,
+pub struct Task<T, E> where T: 'static, E: 'static {
+    task_set: Rc<RefCell<TaskSetImpl<T, E>>>,
+    node: Option<Box<PromiseNode<T, E>>>,
     event_handle: EventHandle,
 }
 
-impl <E> Event for Task<E> {
+impl <T, E> Event for Task<T, E> {
     fn fire(&mut self) -> Option<EventDropper> {
         let maybe_node = ::std::mem::replace(&mut self.node, None);
         match maybe_node {
@@ -273,7 +273,8 @@ impl <E> Event for Task<E> {
             }
             Some(node) => {
                 match node.get() {
-                    Ok(()) => {
+                    Ok(v) => {
+                        self.task_set.borrow_mut().error_handler.task_succeeded(v);
                         return self.task_set.borrow_mut().tasks.remove(&self.event_handle);
                     }
                     Err(e) => {
