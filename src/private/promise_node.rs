@@ -77,17 +77,17 @@ impl <T, E> PromiseNode<T, E> for Immediate<T, E> {
     }
 }
 
-enum ChainState<T, E> {
+enum ChainState<T, E> where T: 'static, E: 'static {
     Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>),
     Step2(Box<PromiseNode<T, E>>, Option<EventHandle>),
     Step3 // done
 }
 
-struct ChainEvent<T, E> {
+struct ChainEvent<T, E> where T: 'static, E: 'static {
     state: Rc<RefCell<ChainState<T, E>>>,
 }
 
-impl <T, E> Event for ChainEvent<T, E> where T: 'static, E: 'static {
+impl <T, E> Event for ChainEvent<T, E> {
     fn fire(&mut self) -> Option<EventDropper> {
         let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
         match state {

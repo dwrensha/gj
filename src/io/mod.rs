@@ -61,7 +61,7 @@ pub trait AsyncRead: 'static {
     /// Returns `self`, the modified `buf`, and the number of bytes actually read.
     /// Returns as soon as `min_bytes` are read or EOF is encountered.
     fn try_read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
-        where T: DerefMut<Target=[u8]>;
+        where T: DerefMut<Target=[u8]>, Self: Sized;
 
     /// Like `try_read()`, but returns an error if EOF is encountered before `min_bytes`
     /// can be read.
@@ -83,7 +83,8 @@ pub trait AsyncRead: 'static {
 pub trait AsyncWrite: 'static {
     /// Attempts to write all `buf.len()` bytes from `buf` into the stream. Returns `self` and `buf`
     /// once all of the bytes have been written.
-    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: Deref<Target=[u8]>;
+    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>>
+        where T: Deref<Target=[u8]>, Self: Sized;
 }
 
 pub struct Slice<T> where T: Deref<Target=[u8]> {
