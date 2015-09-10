@@ -21,6 +21,8 @@
 
 extern crate gj;
 use std::net::ToSocketAddrs;
+use std::cell::RefCell;
+use std::rc::Rc;
 use gj::io::{AsyncRead, AsyncWrite};
 
 fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
@@ -40,21 +42,33 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
     })
 }
 
+type ThreadedState = (::gj::io::tcp::Stream, Vec<u8>);
+
 fn accept_loop(receiver: gj::io::tcp::Listener,
-               mut task_set: gj::TaskSet<(), ::std::io::Error>)
+               mut task_set: gj::TaskSet<ThreadedState, gj::io::Error<ThreadedState>>,
+               mut buffer_pool: Rc<RefCell<Vec<Vec<u8>>>>)
                -> gj::Promise<(), ::std::io::Error>
 {
     receiver.accept().lift().then(move |(receiver, stream)| {
-        task_set.add(echo(stream, vec![0; 1024]).lift().map(|_| Ok(())));
-        Ok(accept_loop(receiver, task_set))
+        match buffer_pool.borrow_mut().pop() {
+            None => println!("Dropping new connection because buffer pool is full."),
+            Some(buf) => task_set.add(echo(stream, buf)),
+        }
+        Ok(accept_loop(receiver, task_set, buffer_pool))
     })
 }
 
-pub struct Reporter;
+struct Reaper {
+    buffer_pool: Rc<RefCell<Vec<Vec<u8>>>>,
+}
 
-impl gj::TaskReaper<(), ::std::io::Error> for Reporter {
-    fn task_failed(&mut self, error: ::std::io::Error) {
-        println!("Task failed: {}", error);
+impl gj::TaskReaper<ThreadedState, gj::io::Error<ThreadedState>> for Reaper {
+    fn task_succeeded(&mut self, (_, buf): ThreadedState) {
+        self.buffer_pool.borrow_mut().push(buf);
+    }
+    fn task_failed(&mut self, error: gj::io::Error<ThreadedState>) {
+        self.buffer_pool.borrow_mut().push(error.state.1);
+        println!("Task failed: {}", error.error);
     }
 }
 
@@ -64,11 +78,18 @@ pub fn main() {
         println!("usage: {} HOST:PORT", args[0]);
         return;
     }
+    const NUM_BUFFERS: usize = 1;
 
     gj::EventLoop::top_level(move |wait_scope| {
+        let mut buffers = Vec::with_capacity(NUM_BUFFERS);
+        for _ in 0..NUM_BUFFERS {
+            buffers.push(vec![0; 1024]);
+        }
+        let buffer_pool = Rc::new(RefCell::new(buffers));
+
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(::gj::io::tcp::Listener::bind(addr));
-        accept_loop(listener,
-                    gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope)
+        let reaper = Box::new(Reaper { buffer_pool: buffer_pool.clone() });
+        accept_loop(listener, gj::TaskSet::new(reaper), buffer_pool).lift().wait(wait_scope)
     }).unwrap();
 }
