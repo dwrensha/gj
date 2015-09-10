@@ -46,7 +46,7 @@ type ThreadedState = (::gj::io::tcp::Stream, Vec<u8>);
 
 fn accept_loop(receiver: gj::io::tcp::Listener,
                mut task_set: gj::TaskSet<ThreadedState, gj::io::Error<ThreadedState>>,
-               mut buffer_pool: Rc<RefCell<Vec<Vec<u8>>>>)
+               buffer_pool: Rc<RefCell<Vec<Vec<u8>>>>)
                -> gj::Promise<(), ::std::io::Error>
 {
     receiver.accept().lift().then(move |(receiver, stream)| {

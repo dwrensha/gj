@@ -119,6 +119,11 @@ impl <T, E> Promise <T, E> {
         Promise { node: Box::new(promise_node::Immediate::new(Err(error))) }
     }
 
+    /// Creates a new promise that never gets fulfilled.
+    pub fn never_done() -> Promise<T, E> {
+        Promise { node: Box::new(promise_node::NeverDone::new()) }
+    }
+
     /// Runs the event loop until the promise is fulfilled.
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.

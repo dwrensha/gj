@@ -77,6 +77,26 @@ impl <T, E> PromiseNode<T, E> for Immediate<T, E> {
     }
 }
 
+/// A promise that never resolves.
+pub struct NeverDone<T, E> {
+    phantom_data: ::std::marker::PhantomData<Result<T, E>>,
+}
+
+impl <T, E> NeverDone<T, E> {
+    pub fn new() -> NeverDone<T, E> {
+        NeverDone { phantom_data: ::std::marker::PhantomData }
+    }
+}
+
+impl <T, E> PromiseNode<T, E> for NeverDone<T, E> {
+    fn on_ready(&mut self, _event: EventHandle) {
+        // ignore
+    }
+    fn get(self: Box<Self>) -> Result<T, E> {
+        panic!("not ready")
+    }
+}
+
 enum ChainState<T, E> where T: 'static, E: 'static {
     Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>),
     Step2(Box<PromiseNode<T, E>>, Option<EventHandle>),
