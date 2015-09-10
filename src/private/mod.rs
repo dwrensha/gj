@@ -24,7 +24,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::result::Result;
 use handle_table::{Handle};
-use {PromiseFulfiller, EventLoop, ErrorHandler};
+use {PromiseFulfiller, EventLoop, TaskReaper};
 
 pub mod promise_node;
 
@@ -239,13 +239,13 @@ impl <T, E> PromiseFulfiller<T, E> for Rc<RefCell<PromiseAndFulfillerHub<T, E>>>
 }
 
 pub struct TaskSetImpl<T, E> where T: 'static, E: 'static {
-    error_handler: Box<ErrorHandler<T, E>>,
+    reaper: Box<TaskReaper<T, E>>,
     tasks: HashMap<EventHandle, EventDropper>,
 }
 
 impl <T, E> TaskSetImpl <T, E> {
-    pub fn new(error_handler: Box<ErrorHandler<T, E>>) -> TaskSetImpl<T, E> {
-        TaskSetImpl { error_handler: error_handler,
+    pub fn new(reaper: Box<TaskReaper<T, E>>) -> TaskSetImpl<T, E> {
+        TaskSetImpl { reaper: reaper,
                       tasks: HashMap::new() }
     }
 
@@ -274,11 +274,11 @@ impl <T, E> Event for Task<T, E> {
             Some(node) => {
                 match node.get() {
                     Ok(v) => {
-                        self.task_set.borrow_mut().error_handler.task_succeeded(v);
+                        self.task_set.borrow_mut().reaper.task_succeeded(v);
                         self.task_set.borrow_mut().tasks.remove(&self.event_handle)
                     }
                     Err(e) => {
-                        self.task_set.borrow_mut().error_handler.task_failed(e);
+                        self.task_set.borrow_mut().reaper.task_failed(e);
                         None
                     }
                 }

@@ -315,8 +315,8 @@ pub struct TaskSet<T, E> where T: 'static, E: 'static {
 }
 
 impl <T, E> TaskSet <T, E> {
-    pub fn new(error_handler: Box<ErrorHandler<T, E>>) -> TaskSet<T, E> {
-        TaskSet { task_set_impl : Rc::new(RefCell::new(private::TaskSetImpl::new(error_handler))) }
+    pub fn new(reaper: Box<TaskReaper<T, E>>) -> TaskSet<T, E> {
+        TaskSet { task_set_impl : Rc::new(RefCell::new(private::TaskSetImpl::new(reaper))) }
     }
 
     pub fn add(&mut self, promise: Promise<T, E>) {
@@ -325,7 +325,7 @@ impl <T, E> TaskSet <T, E> {
 }
 
 /// Callbacks to be invoked when a task in a `TaskSet` finishes.
-pub trait ErrorHandler<T, E> where T: 'static, E: 'static {
+pub trait TaskReaper<T, E> where T: 'static, E: 'static {
     fn task_succeeded(&mut self, _value: T) {}
     fn task_failed(&mut self, error: E);
 }

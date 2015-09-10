@@ -69,7 +69,7 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
 
 pub struct Reporter;
 
-impl gj::ErrorHandler<(), ::std::io::Error> for Reporter {
+impl gj::TaskReaper<(), ::std::io::Error> for Reporter {
     fn task_failed(&mut self, error: ::std::io::Error) {
         println!("Task failed: {}", error);
     }

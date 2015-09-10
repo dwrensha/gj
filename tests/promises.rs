@@ -238,11 +238,11 @@ fn ordering() {
 }
 
 
-pub struct ErrorHandlerImpl {
+pub struct TaskReaperImpl {
     error_count: ::std::rc::Rc<::std::cell::Cell<u32>>,
 }
 
-impl gj::ErrorHandler<(), Box<::std::error::Error>> for ErrorHandlerImpl {
+impl gj::TaskReaper<(), Box<::std::error::Error>> for TaskReaperImpl {
     fn task_failed(&mut self, _error: Box<::std::error::Error>) {
         self.error_count.set(self.error_count.get() + 1);
     }
@@ -252,7 +252,7 @@ impl gj::ErrorHandler<(), Box<::std::error::Error>> for ErrorHandlerImpl {
 fn task_set() {
     gj::EventLoop::top_level(|wait_scope| {
         let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
-        let mut tasks = gj::TaskSet::new(Box::new(ErrorHandlerImpl {error_count: error_count.clone()}));
+        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl {error_count: error_count.clone()}));
         tasks.add(gj::Promise::fulfilled(()).map(|()| {
             Ok(())
         }));
