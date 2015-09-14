@@ -40,7 +40,9 @@ pub struct Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        // deregister the token
+        with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
+        })
     }
 }
 
@@ -49,12 +51,12 @@ impl Listener {
         let listener = try!(::mio::unix::UnixListener::bind(&addr));
         let handle = FdObserver::new();
 
-        return with_current_event_loop(move |event_loop| {
+        with_current_event_loop(move |event_loop| {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
             Ok(Listener { listener: listener, handle: handle })
-        });
+        })
     }
 
     fn accept_internal(self) -> Result<Promise<(Listener, Stream), Error<Listener>>, Error<Listener>> {
@@ -84,7 +86,7 @@ impl Listener {
     }
 
     pub fn accept(self) -> Promise<(Listener, Stream), Error<Listener>> {
-        return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
+        Promise::fulfilled(()).then(move |()| self.accept_internal())
     }
 }
 
@@ -106,6 +108,14 @@ impl HasHandle for Stream {
     fn get_handle(&self) -> Handle { self.handle }
 }
 
+impl Drop for Stream {
+    fn drop(&mut self) {
+        with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
+        })
+    }
+}
+
 impl Stream {
     fn new(stream: ::mio::unix::UnixStream, handle: Handle) -> Stream {
         Stream { stream: stream, handle: handle }
@@ -113,7 +123,7 @@ impl Stream {
 
     pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<Stream, ::std::io::Error> {
         let connect_result = ::mio::unix::UnixStream::connect(&addr);
-        return Promise::fulfilled(()).then(move |()| {
+        Promise::fulfilled(()).then(move |()| {
             let stream = try!(connect_result);
 
             // TODO: if we're not already connected, maybe only register writable interest,
@@ -121,27 +131,27 @@ impl Stream {
 
             let handle = try!(register_new_handle(&stream));
 
-            return with_current_event_loop(move |event_loop| {
+            with_current_event_loop(move |event_loop| {
                 let promise =
                     event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
-                return Ok(promise.map(move |()| {
+                Ok(promise.map(move |()| {
                     //try!(stream.take_socket_error());
-                    return Ok(Stream::new(stream, handle));
-                }));
-            });
-        });
+                    Ok(Stream::new(stream, handle))
+                }))
+            })
+        })
     }
 
     pub fn try_clone(&self) -> Result<Stream, ::std::io::Error> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
-        return Ok(Stream::new(stream, handle));
+        Ok(Stream::new(stream, handle))
     }
 
     pub unsafe fn from_raw_fd(fd: ::std::os::unix::io::RawFd) -> Result<Stream, ::std::io::Error> {
         let stream = ::std::os::unix::io::FromRawFd::from_raw_fd(fd);
         let handle = try!(register_new_handle(&stream));
-        return Ok(Stream::new(stream, handle));
+        Ok(Stream::new(stream, handle))
     }
 }
 
@@ -150,17 +160,17 @@ impl AsyncRead for Stream {
                    min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
         where T: DerefMut<Target=[u8]>
     {
-        return Promise::fulfilled(()).then(move |()| {
-            return try_read_internal(self, buf, 0, min_bytes);
-        });
+        Promise::fulfilled(()).then(move |()| {
+            try_read_internal(self, buf, 0, min_bytes)
+        })
     }
 }
 
 impl AsyncWrite for Stream {
     fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: Deref<Target=[u8]> {
-        return Promise::fulfilled(()).then(move |()| {
-            return write_internal(self, buf, 0);
-        });
+        Promise::fulfilled(()).then(move |()| {
+            write_internal(self, buf, 0)
+        })
     }
 }
 

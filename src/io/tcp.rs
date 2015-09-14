@@ -40,7 +40,9 @@ pub struct Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        // deregister the token
+        with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
+        })
     }
 }
 
@@ -49,13 +51,13 @@ impl Listener {
         let listener = try!(::mio::tcp::TcpListener::bind(&addr));
         let handle = FdObserver::new();
 
-        return with_current_event_loop(move |event_loop| {
+        with_current_event_loop(move |event_loop| {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
             Ok(Listener { listener: listener,
                           handle: handle })
-        });
+        })
     }
 
     fn accept_internal(self) -> Result<Promise<(Listener, Stream), Error<Listener>>, Error<Listener>> {
@@ -85,7 +87,7 @@ impl Listener {
     }
 
     pub fn accept(self) -> Promise<(Listener, Stream), Error<Listener>> {
-        return Promise::fulfilled(()).then(move |()| {return self.accept_internal(); });
+        Promise::fulfilled(()).then(move |()| self.accept_internal())
     }
 }
 
@@ -109,10 +111,9 @@ impl HasHandle for Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        return with_current_event_loop(move |event_loop| {
+        with_current_event_loop(move |event_loop| {
             event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
-            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.stream);
-        });
+        })
     }
 }
 
@@ -122,7 +123,7 @@ impl Stream {
     }
 
     pub fn connect(addr: ::std::net::SocketAddr) -> Promise<Stream, ::std::io::Error> {
-        return Promise::fulfilled(()).then(move |()| {
+        Promise::fulfilled(()).then(move |()| {
             let stream = try!(::mio::tcp::TcpStream::connect(&addr));
 
             // TODO: if we're not already connected, maybe only register writable interest,
@@ -133,25 +134,25 @@ impl Stream {
             with_current_event_loop(move |event_loop| {
                 let promise =
                     event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
-                return Ok(promise.map(move |()| {
+                Ok(promise.map(move |()| {
                     try!(stream.take_socket_error());
-                    return Ok(Stream::new(stream, handle));
-                }));
+                    Ok(Stream::new(stream, handle))
+                }))
             })
-        });
+        })
     }
 
     pub fn try_clone(&self) -> Result<Stream, ::std::io::Error> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
-        return Ok(Stream::new(stream, handle));
+        Ok(Stream::new(stream, handle))
     }
 
     #[cfg(unix)]
     pub unsafe fn from_raw_fd(fd: ::std::os::unix::io::RawFd) -> Result<Stream, ::std::io::Error> {
         let stream = ::std::os::unix::io::FromRawFd::from_raw_fd(fd);
         let handle = try!(register_new_handle(&stream));
-        return Ok(Stream::new(stream, handle));
+        Ok(Stream::new(stream, handle))
     }
 }
 
