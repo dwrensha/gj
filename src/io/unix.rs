@@ -54,7 +54,7 @@ impl Listener {
         let handle = FdObserver::new();
 
         with_current_event_loop(move |event_loop| {
-            try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
+            try!(event_loop.event_port.borrow_mut().reactor.register(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
             Ok(Listener { listener: listener, handle: handle, no_send: ::std::marker::PhantomData })

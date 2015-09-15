@@ -109,10 +109,10 @@ fn register_new_handle<E>(evented: &E) -> Result<Handle, ::std::io::Error> where
     let handle = FdObserver::new();
     let token = ::mio::Token(handle.val);
     return with_current_event_loop(move |event_loop| {
-        try!(event_loop.event_port.borrow_mut().reactor.register_opt(evented, token,
-                                                                     ::mio::EventSet::writable() |
-                                                                     ::mio::EventSet::readable(),
-                                                                     ::mio::PollOpt::edge()));
+        try!(event_loop.event_port.borrow_mut().reactor.register(evented, token,
+                                                                 ::mio::EventSet::writable() |
+                                                                 ::mio::EventSet::readable(),
+                                                                 ::mio::PollOpt::edge()));
         // XXX if this fails, the handle does not get cleaned up.
         return Ok(handle);
     });
