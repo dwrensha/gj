@@ -19,6 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//! Echo server with a bounded buffer pool.
+
 extern crate gj;
 use std::net::ToSocketAddrs;
 use std::cell::RefCell;
@@ -51,7 +53,7 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
 {
     receiver.accept().lift().then(move |(receiver, stream)| {
         match buffer_pool.borrow_mut().pop() {
-            None => println!("Dropping new connection because buffer pool is full."),
+            None => println!("Buffer pool has no free buffers. Dropping connection."),
             Some(buf) => task_set.add(echo(stream, buf)),
         }
         Ok(accept_loop(receiver, task_set, buffer_pool))
@@ -73,12 +75,12 @@ impl gj::TaskReaper<ThreadedState, gj::io::Error<ThreadedState>> for Reaper {
 }
 
 pub fn main() {
-    let args : Vec<String> = ::std::env::args().collect();
+    let args: Vec<String> = ::std::env::args().collect();
     if args.len() != 2 {
         println!("usage: {} HOST:PORT", args[0]);
         return;
     }
-    const NUM_BUFFERS: usize = 1;
+    const NUM_BUFFERS: usize = 64;
 
     gj::EventLoop::top_level(move |wait_scope| {
         let mut buffers = Vec::with_capacity(NUM_BUFFERS);
