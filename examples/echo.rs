@@ -27,6 +27,56 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use gj::io::{AsyncRead, AsyncWrite};
 
+struct BufferPool {
+    buffers: Vec<Vec<u8>>,
+    fulfiller: Option<Box<gj::PromiseFulfiller<Vec<u8>, ::std::io::Error>>>,
+}
+
+impl BufferPool {
+    pub fn new(num_buffers: usize) -> BufferPool {
+        let mut buffers = Vec::with_capacity(num_buffers);
+        for _ in 0..num_buffers {
+            buffers.push(vec![0; 1024]);
+        }
+        BufferPool { buffers: buffers, fulfiller: None }
+    }
+
+    pub fn pop(&mut self) -> gj::Promise<Vec<u8>, ::std::io::Error> {
+        match self.buffers.pop() {
+            Some(buf) => gj::Promise::fulfilled(buf),
+            None => {
+                let (promise, fulfiller) = gj::new_promise_and_fulfiller();
+                assert!(self.fulfiller.is_none(), "only supports one waiting task");
+                self.fulfiller = Some(fulfiller);
+                promise
+            }
+        }
+    }
+
+    pub fn push(&mut self, buf: Vec<u8>) {
+        match self.fulfiller.take() {
+            Some(fulfiller) => fulfiller.fulfill(buf),
+            None => self.buffers.push(buf),
+        }
+    }
+}
+
+struct Reaper {
+    buffer_pool: Rc<RefCell<BufferPool>>,
+}
+
+impl gj::TaskReaper<ThreadedState, gj::io::Error<ThreadedState>> for Reaper {
+    fn task_succeeded(&mut self, (_, buf): ThreadedState) {
+        self.buffer_pool.borrow_mut().push(buf);
+    }
+    fn task_failed(&mut self, error: gj::io::Error<ThreadedState>) {
+        self.buffer_pool.borrow_mut().push(error.state.1);
+        println!("Task failed: {}", error.error);
+    }
+}
+
+type ThreadedState = (::gj::io::tcp::Stream, Vec<u8>);
+
 fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
     where S: AsyncRead + AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
 {
@@ -44,34 +94,18 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
     })
 }
 
-type ThreadedState = (::gj::io::tcp::Stream, Vec<u8>);
-
 fn accept_loop(receiver: gj::io::tcp::Listener,
                mut task_set: gj::TaskSet<ThreadedState, gj::io::Error<ThreadedState>>,
-               buffer_pool: Rc<RefCell<Vec<Vec<u8>>>>)
+               buffer_pool: Rc<RefCell<BufferPool>>)
                -> gj::Promise<(), ::std::io::Error>
 {
-    receiver.accept().lift().then(move |(receiver, stream)| {
-        match buffer_pool.borrow_mut().pop() {
-            None => println!("Buffer pool has no free buffers. Dropping connection."),
-            Some(buf) => task_set.add(echo(stream, buf)),
-        }
-        Ok(accept_loop(receiver, task_set, buffer_pool))
+    let buf_promise = buffer_pool.borrow_mut().pop();
+    buf_promise.then(move |buf| {
+        Ok(receiver.accept().lift().then(move |(receiver, stream)| {
+            task_set.add(echo(stream, buf));
+            Ok(accept_loop(receiver, task_set, buffer_pool))
+        }))
     })
-}
-
-struct Reaper {
-    buffer_pool: Rc<RefCell<Vec<Vec<u8>>>>,
-}
-
-impl gj::TaskReaper<ThreadedState, gj::io::Error<ThreadedState>> for Reaper {
-    fn task_succeeded(&mut self, (_, buf): ThreadedState) {
-        self.buffer_pool.borrow_mut().push(buf);
-    }
-    fn task_failed(&mut self, error: gj::io::Error<ThreadedState>) {
-        self.buffer_pool.borrow_mut().push(error.state.1);
-        println!("Task failed: {}", error.error);
-    }
 }
 
 pub fn main() {
@@ -80,14 +114,9 @@ pub fn main() {
         println!("usage: {} HOST:PORT", args[0]);
         return;
     }
-    const NUM_BUFFERS: usize = 64;
+    let buffer_pool = Rc::new(RefCell::new(BufferPool::new(1)));
 
     gj::EventLoop::top_level(move |wait_scope| {
-        let mut buffers = Vec::with_capacity(NUM_BUFFERS);
-        for _ in 0..NUM_BUFFERS {
-            buffers.push(vec![0; 1024]);
-        }
-        let buffer_pool = Rc::new(RefCell::new(buffers));
 
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(::gj::io::tcp::Listener::bind(addr));
