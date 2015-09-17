@@ -67,7 +67,7 @@ impl Listener {
             Ok(v) => v,
         };
         match accept_result {
-            Some(stream) => {
+            Some((stream, _)) => {
                 let handle = match register_new_handle(&stream) {
                     Err(e) => return Err(Error::new(self, e)),
                     Ok(v) => v,
