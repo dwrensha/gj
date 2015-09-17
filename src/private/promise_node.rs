@@ -188,6 +188,9 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
             }
         }
     }
+    fn set_self_pointer(&mut self) {
+
+    }
 }
 
 

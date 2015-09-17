@@ -335,3 +335,23 @@ fn exclusive_join() {
         Ok(())
     }).unwrap();
 }
+
+
+#[test]
+fn recursion() {
+    fn foo(n: u64) -> gj::Promise<(), ()> {
+        gj::Promise::fulfilled(()).then(move |()| {
+            if n == 0 {
+                Ok(gj::Promise::fulfilled(()))
+            } else {
+                Ok(foo(n-1))
+            }
+        })
+    }
+
+    gj::EventLoop::top_level(|wait_scope| {
+        // TODO it should be possible to set n arbitrarily large here.
+        // Currently we get a stack overflow for n > 10000.
+        Ok(foo(100).wait(wait_scope).unwrap())
+    }).unwrap();
+}
