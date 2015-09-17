@@ -45,7 +45,7 @@ pub trait PromiseNode<T, E> {
     /// Arms the given event when the promised value is ready.
     fn on_ready(&mut self, event: EventHandle);
 
-    fn set_self_pointer(&mut self) {}
+    fn set_self_pointer(&mut self, _chain_state: Rc<RefCell<promise_node::ChainState<T, E>>>) {}
     fn get(self: Box<Self>) -> Result<T, E>;
 }
 

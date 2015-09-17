@@ -97,13 +97,13 @@ impl <T, E> PromiseNode<T, E> for NeverDone<T, E> {
     }
 }
 
-enum ChainState<T, E> where T: 'static, E: 'static {
-    Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>),
-    Step2(Box<PromiseNode<T, E>>, Option<EventHandle>),
+pub enum ChainState<T, E> where T: 'static, E: 'static {
+    Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>, Option<Rc<RefCell<ChainState<T, E>>>>),
+    Step2(Box<PromiseNode<T, E>>, Option<Rc<RefCell<ChainState<T, E>>>>),
     Step3 // done
 }
 
-struct ChainEvent<T, E> where T: 'static, E: 'static {
+pub struct ChainEvent<T, E> where T: 'static, E: 'static {
     state: Rc<RefCell<ChainState<T, E>>>,
 }
 
@@ -111,7 +111,7 @@ impl <T, E> Event for ChainEvent<T, E> {
     fn fire(&mut self) -> Option<EventDropper> {
         let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
         match state {
-            ChainState::Step1(inner, on_ready_event) => {
+            ChainState::Step1(inner, on_ready_event, self_ptr) => {
                 match inner.get() {
                     Ok(mut intermediate) => {
                         match on_ready_event {
@@ -121,7 +121,7 @@ impl <T, E> Event for ChainEvent<T, E> {
                             None => {}
                         }
 
-                        *self.state.borrow_mut() = ChainState::Step2(intermediate.node, None);
+                        *self.state.borrow_mut() = ChainState::Step2(intermediate.node, self_ptr);
                     }
                     Err(e) => {
                         let mut node = Immediate::new(Err(e));
@@ -132,7 +132,30 @@ impl <T, E> Event for ChainEvent<T, E> {
                             None => {}
                         }
 
-                        *self.state.borrow_mut() = ChainState::Step2(Box::new(node), None);
+                        *self.state.borrow_mut() = ChainState::Step2(Box::new(node), self_ptr);
+                    }
+                }
+
+                let mut shorten = false;
+                let self_state = self.state.clone(); // TODO better control flow
+                match &mut *self.state.borrow_mut() {
+                    &mut ChainState::Step2(_, Some(_)) => {
+                        shorten = true;
+                    }
+                    &mut ChainState::Step2(ref mut inner, None) => {
+                        inner.set_self_pointer(self_state);
+                    }
+                    _ => { unreachable!() }
+                }
+
+                if shorten {
+                    let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
+
+                    match state {
+                        ChainState::Step2(inner, Some(self_ptr)) => {
+                            *self_ptr.borrow_mut() = ChainState::Step2(inner, None);
+                        }
+                        _ => { unreachable!() }
                     }
                 }
             }
@@ -156,7 +179,7 @@ impl <T, E> Chain<T, E> {
         let (handle, dropper) = EventHandle::new();
         handle.set(event);
         inner.on_ready(handle);
-        *state.borrow_mut() = ChainState::Step1(inner, None);
+        *state.borrow_mut() = ChainState::Step1(inner, None, None);
 
         Chain { state: state, dropper: dropper }
     }
@@ -168,10 +191,10 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
             &mut ChainState::Step2(ref mut inner, _) => {
                 inner.on_ready(event);
             }
-            &mut ChainState::Step1(_, Some(_)) => {
+            &mut ChainState::Step1(_, Some(_), _) => {
                 panic!("on_ready() can only be called once.");
             }
-            &mut ChainState::Step1(_, ref mut on_ready_event) => {
+            &mut ChainState::Step1(_, ref mut on_ready_event, _) => {
                 *on_ready_event = Some(event);
             }
             _ => { panic!() }
@@ -188,8 +211,16 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
             }
         }
     }
-    fn set_self_pointer(&mut self) {
-
+    fn set_self_pointer(&mut self, chain_state: Rc<RefCell<ChainState<T, E>>>) {
+        match &mut *self.state.borrow_mut() {
+            &mut ChainState::Step1(_, _, ref mut self_ptr) => {
+                *self_ptr = Some(chain_state);
+            }
+            &mut ChainState::Step2(_, ref mut self_ptr) => {
+                *self_ptr = Some(chain_state);
+            }
+            _ => { panic!() }
+        }
     }
 }
 
