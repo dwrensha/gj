@@ -34,11 +34,7 @@ struct BufferPool {
 
 impl BufferPool {
     pub fn new(num_buffers: usize) -> BufferPool {
-        let mut buffers = Vec::with_capacity(num_buffers);
-        for _ in 0..num_buffers {
-            buffers.push(vec![0; 1024]);
-        }
-        BufferPool { buffers: buffers, fulfiller: None }
+        BufferPool { buffers: vec![vec![0; 1024]; num_buffers], fulfiller: None }
     }
 
     pub fn pop(&mut self) -> gj::Promise<Vec<u8>, ::std::io::Error> {
@@ -114,7 +110,7 @@ pub fn main() {
         println!("usage: {} HOST:PORT", args[0]);
         return;
     }
-    let buffer_pool = Rc::new(RefCell::new(BufferPool::new(1)));
+    let buffer_pool = Rc::new(RefCell::new(BufferPool::new(64)));
 
     gj::EventLoop::top_level(move |wait_scope| {
 
