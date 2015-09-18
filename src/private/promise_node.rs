@@ -25,7 +25,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::result::Result;
 use {Promise};
-use private::{Event, EventDropper, EventHandle, OnReadyEvent, PromiseNode};
+use private::{Event, EventDropper, OpaqueEventDropper, EventHandle, OnReadyEvent, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -108,7 +108,7 @@ pub struct ChainEvent<T, E> where T: 'static, E: 'static {
 }
 
 impl <T, E> Event for ChainEvent<T, E> {
-    fn fire(&mut self) -> Option<EventDropper> {
+    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
         let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
         match state {
             ChainState::Step1(inner, on_ready_event, self_ptr) => {
@@ -153,15 +153,23 @@ impl <T, E> Event for ChainEvent<T, E> {
 
                     match state {
                         ChainState::Step2(inner, Some(self_ptr)) => {
-                            *self_ptr.borrow_mut() = ChainState::Step2(inner, None);
+                            let self_state = ::std::mem::replace(&mut *self_ptr.borrow_mut(),
+                                                                 ChainState::Step2(inner, None));
+                            match self_state {
+                                ChainState::Step2(inner, _) => {
+                                    Some(Box::new(inner))
+                                }
+                                _ => unreachable!(),
+                            }
                         }
                         _ => { unreachable!() }
                     }
+                } else {
+                    None
                 }
             }
             _ => panic!("should be in step 1"),
         }
-        return None;
     }
 }
 
@@ -230,7 +238,7 @@ struct ArrayJoinBranch {
 }
 
 impl Event for ArrayJoinBranch {
-    fn fire(&mut self) -> Option<EventDropper> {
+    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
         let state = &mut *self.state.borrow_mut();
         state.count_left -= 1;
         if state.count_left == 0 {
@@ -287,7 +295,7 @@ struct ExclusiveJoinBranch<T, E> {
 }
 
 impl<T, E> Event for ExclusiveJoinBranch<T, E> {
-    fn fire(&mut self) -> Option<EventDropper> {
+    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
         let state = &mut *self.state.borrow_mut();
         match self.side {
             ExclusiveJoinSide::Left => {

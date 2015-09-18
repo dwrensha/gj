@@ -50,7 +50,7 @@ pub trait PromiseNode<T, E> {
 }
 
 pub trait Event {
-    fn fire(&mut self) -> Option<EventDropper>;
+    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>>;
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash)]
@@ -125,6 +125,12 @@ impl Drop for EventDropper {
     }
 }
 
+pub trait OpaqueEventDropper {}
+
+impl <T, E> OpaqueEventDropper for Box<PromiseNode<T, E>> {}
+
+impl OpaqueEventDropper for EventDropper {}
+
 pub struct BoolEvent {
     fired: ::std::rc::Rc<::std::cell::Cell<bool>>,
 }
@@ -136,7 +142,7 @@ impl BoolEvent {
 }
 
 impl Event for BoolEvent {
-    fn fire(&mut self) -> Option<EventDropper> {
+    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
         self.fired.set(true);
         None
     }
@@ -265,7 +271,7 @@ pub struct Task<T, E> where T: 'static, E: 'static {
 }
 
 impl <T, E> Event for Task<T, E> {
-    fn fire(&mut self) -> Option<EventDropper> {
+    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
         let maybe_node = ::std::mem::replace(&mut self.node, None);
         match maybe_node {
             None => {
@@ -275,7 +281,10 @@ impl <T, E> Event for Task<T, E> {
                 match node.get() {
                     Ok(v) => {
                         self.task_set.borrow_mut().reaper.task_succeeded(v);
-                        self.task_set.borrow_mut().tasks.remove(&self.event_handle)
+                        match self.task_set.borrow_mut().tasks.remove(&self.event_handle) {
+                            None => None,
+                            Some(v) => Some(Box::new(v))
+                        }
                     }
                     Err(e) => {
                         self.task_set.borrow_mut().reaper.task_failed(e);
