@@ -152,7 +152,8 @@ impl <T, E> Event for ChainEvent<T, E> {
                     let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
 
                     match state {
-                        ChainState::Step2(inner, Some(self_ptr)) => {
+                        ChainState::Step2(mut inner, Some(self_ptr)) => {
+                            inner.set_self_pointer(self_ptr.clone());
                             let self_state = ::std::mem::replace(&mut *self_ptr.borrow_mut(),
                                                                  ChainState::Step2(inner, None));
                             match self_state {

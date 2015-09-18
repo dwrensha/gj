@@ -350,8 +350,6 @@ fn recursion() {
     }
 
     gj::EventLoop::top_level(|wait_scope| {
-        // TODO it should be possible to set n arbitrarily large here.
-        // Currently we get a stack overflow for n > 10000.
-        Ok(foo(10000).wait(wait_scope).unwrap())
+        Ok(foo(100000).wait(wait_scope).unwrap())
     }).unwrap();
 }
