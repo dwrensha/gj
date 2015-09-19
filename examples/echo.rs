@@ -29,7 +29,7 @@ use gj::io::{AsyncRead, AsyncWrite};
 
 struct BufferPool {
     buffers: Vec<Vec<u8>>,
-    fulfiller: Option<Box<gj::PromiseFulfiller<Vec<u8>, ::std::io::Error>>>,
+    fulfiller: Option<Box<gj::PromiseFulfiller<Vec<u8>, ()>>>,
 }
 
 impl BufferPool {
@@ -37,14 +37,17 @@ impl BufferPool {
         BufferPool { buffers: vec![vec![0; 1024]; num_buffers], fulfiller: None }
     }
 
-    pub fn pop(&mut self) -> gj::Promise<Vec<u8>, ::std::io::Error> {
+    pub fn pop(&mut self) -> gj::Promise<Vec<u8>, ()> {
         match self.buffers.pop() {
             Some(buf) => gj::Promise::fulfilled(buf),
             None => {
-                let (promise, fulfiller) = gj::new_promise_and_fulfiller();
-                assert!(self.fulfiller.is_none(), "only supports one waiting task");
-                self.fulfiller = Some(fulfiller);
-                promise
+                if self.fulfiller.is_some() {
+                    gj::Promise::rejected(())
+                } else {
+                    let (promise, fulfiller) = gj::new_promise_and_fulfiller();
+                    self.fulfiller = Some(fulfiller);
+                    promise
+                }
             }
         }
     }
@@ -95,7 +98,8 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
                buffer_pool: Rc<RefCell<BufferPool>>)
                -> gj::Promise<(), ::std::io::Error>
 {
-    let buf_promise = buffer_pool.borrow_mut().pop();
+    let buf_promise = buffer_pool.borrow_mut().pop().map_err(|()| {
+        ::std::io::Error::new(::std::io::ErrorKind::Other, "No available buffers")});
     buf_promise.then(move |buf| {
         Ok(receiver.accept().lift().then(move |(receiver, stream)| {
             task_set.add(echo(stream, buf));
@@ -113,7 +117,6 @@ pub fn main() {
     let buffer_pool = Rc::new(RefCell::new(BufferPool::new(64)));
 
     gj::EventLoop::top_level(move |wait_scope| {
-
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(::gj::io::tcp::Listener::bind(addr));
         let reaper = Box::new(Reaper { buffer_pool: buffer_pool.clone() });
