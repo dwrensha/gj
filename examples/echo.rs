@@ -93,7 +93,7 @@ fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
     })
 }
 
-fn accept_loop(receiver: gj::io::tcp::Listener,
+fn accept_loop(listener: gj::io::tcp::Listener,
                mut task_set: gj::TaskSet<ThreadedState, gj::io::Error<ThreadedState>>,
                buffer_pool: Rc<RefCell<BufferPool>>)
                -> gj::Promise<(), ::std::io::Error>
@@ -101,9 +101,9 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
     let buf_promise = buffer_pool.borrow_mut().pop().map_err(|()| {
         ::std::io::Error::new(::std::io::ErrorKind::Other, "No available buffers")});
     buf_promise.then(move |buf| {
-        Ok(receiver.accept().lift().then(move |(receiver, stream)| {
+        Ok(listener.accept().lift().then(move |(listener, stream)| {
             task_set.add(echo(stream, buf));
-            Ok(accept_loop(receiver, task_set, buffer_pool))
+            Ok(accept_loop(listener, task_set, buffer_pool))
         }))
     })
 }
@@ -118,7 +118,7 @@ pub fn main() {
 
     gj::EventLoop::top_level(move |wait_scope| {
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
-        let listener = try!(::gj::io::tcp::Listener::bind(addr));
+        let listener = try!(gj::io::tcp::Listener::bind(addr));
         let reaper = Box::new(Reaper { buffer_pool: buffer_pool.clone() });
         accept_loop(listener, gj::TaskSet::new(reaper), buffer_pool).lift().wait(wait_scope)
     }).unwrap();
