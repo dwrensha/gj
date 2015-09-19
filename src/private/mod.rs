@@ -209,13 +209,14 @@ impl <T, E> PromiseAndFulfillerHub<T, E> {
     pub fn fulfill(&mut self, value: T) {
         if self.result.is_none() {
             self.result = Some(Ok(value));
+            self.on_ready_event.arm();
         }
-        self.on_ready_event.arm();
     }
 
     pub fn reject(&mut self, error: E) {
         if self.result.is_none() {
             self.result = Some(Err(error));
+            self.on_ready_event.arm();
         }
     }
 }

@@ -72,6 +72,17 @@ fn fulfiller() {
 }
 
 #[test]
+fn reject_fulfiller() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let (promise, fulfiller) = gj::new_promise_and_fulfiller::<(), ()>();
+        fulfiller.reject(());
+        let value = promise.wait(wait_scope);
+        assert_eq!(value, Err(()));
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn chain() {
     gj::EventLoop::top_level(|wait_scope| {
 
@@ -302,7 +313,7 @@ fn exclusive_join() {
         let left = gj::Promise::fulfilled(()).map(|()| {
             return Ok(123);
         });
-        let (right, _) = gj::new_promise_and_fulfiller::<u32, ()>();
+        let (right, _fulfiller) = gj::new_promise_and_fulfiller::<u32, ()>();
         let result = left.exclusive_join(right).wait(wait_scope).unwrap();
 
         assert_eq!(result, 123);
@@ -310,7 +321,7 @@ fn exclusive_join() {
     }).unwrap();
 
     gj::EventLoop::top_level(|wait_scope| {
-        let (left, _) = gj::new_promise_and_fulfiller::<u32, ()>();
+        let (left, _fulfiller) = gj::new_promise_and_fulfiller::<u32, ()>();
         let right = gj::Promise::fulfilled(()).map(|()| {
             return Ok(456);
         });

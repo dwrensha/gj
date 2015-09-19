@@ -296,6 +296,10 @@ impl EventLoop {
     }
 }
 
+/*pub trait FulfillerDropped {
+    fn fulfiller_dropped() -> Self;
+}*/
+
 /// A handle that can be used to fulfill or reject a promise. If you think of a promise
 /// as the receiving end of a one-shot channel, then this is the sending end.
 pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static {
@@ -312,6 +316,22 @@ impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static {
     }
 }
 
+/*
+impl <T, E> Drop for PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
+    fn drop(&mut self) {
+        self.hub.borrow_mut().reject(E::fulfiller_dropped());
+    }
+}
+
+impl FulfillerDropped for () {
+    fn fulfiller_dropped() -> () { () }
+}
+
+impl FulfillerDropped for ::std::io::Error {
+    fn fulfiller_dropped() -> ::std::io::Error {
+        ::std::io::Error::new(::std::io::ErrorKind::Other, "Promise fulfiller was dropped.")
+    }
+}*/
 
 /// Creates a new promise/fulfiller pair.
 pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, PromiseFulfiller<T, E>)

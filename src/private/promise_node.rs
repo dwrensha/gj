@@ -315,7 +315,6 @@ struct ExclusiveJoinState<T, E> {
     on_ready_event: OnReadyEvent,
     left: Option<(Box<PromiseNode<T, E>>, EventDropper)>,
     right: Option<(Box<PromiseNode<T, E>>, EventDropper)>,
-
 }
 
 pub struct ExclusiveJoin<T, E> where T: 'static, E: 'static {
