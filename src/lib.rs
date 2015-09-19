@@ -304,22 +304,27 @@ pub trait FulfillerDropped {
 /// A handle that can be used to fulfill or reject a promise. If you think of a promise
 /// as the receiving end of a one-shot channel, then this is the sending end.
 pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
-    hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>
+    hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>,
+    done: bool,
 }
 
 impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
-    pub fn fulfill(self, value: T) {
+    pub fn fulfill(mut self, value: T) {
         self.hub.borrow_mut().fulfill(value);
+        self.done = true;
     }
 
-    pub fn reject(self, error: E) {
+    pub fn reject(mut self, error: E) {
         self.hub.borrow_mut().reject(error);
+        self.done = true;
     }
 }
 
 impl <T, E> Drop for PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     fn drop(&mut self) {
-        self.hub.borrow_mut().reject(E::fulfiller_dropped());
+        if !self.done {
+            self.hub.borrow_mut().reject(E::fulfiller_dropped());
+        }
     }
 }
 
@@ -341,7 +346,7 @@ pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, PromiseFulfiller<T, 
     let result = Rc::new(RefCell::new(PromiseAndFulfillerHub::new()));
     let result_promise: Promise<T, E> =
         Promise { node: Box::new(PromiseAndFulfillerWrapper::new(result.clone()))};
-    (result_promise, PromiseFulfiller{ hub: result })
+    (result_promise, PromiseFulfiller{ hub: result, done: false })
 }
 
 

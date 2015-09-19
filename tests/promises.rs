@@ -83,6 +83,16 @@ fn reject_fulfiller() {
 }
 
 #[test]
+fn drop_fulfiller() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let (promise, _) = gj::new_promise_and_fulfiller::<(), ()>();
+        let value = promise.wait(wait_scope);
+        assert_eq!(value, Err(()));
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn chain() {
     gj::EventLoop::top_level(|wait_scope| {
 
