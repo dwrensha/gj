@@ -19,82 +19,96 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-//! Echo server with a bounded buffer pool.
+//! Single-threaded echo server with a bounded buffer pool. Allocates N buffers upon initialization
+//! and uses them to serve up to N clients concurrently. When all buffers are in use, the server
+//! waits until the next buffer becomes available before accepting the next client connection.
 
 extern crate gj;
-use std::net::ToSocketAddrs;
+
 use std::cell::RefCell;
 use std::rc::Rc;
-use gj::io::{AsyncRead, AsyncWrite};
 
+/// Container for buffers that are not currently being used on a connection.
 struct BufferPool {
     buffers: Vec<Vec<u8>>,
-    fulfiller: Option<gj::PromiseFulfiller<Vec<u8>, ()>>,
+    waiting: Option<gj::PromiseFulfiller<Vec<u8>, ()>>,
 }
 
 impl BufferPool {
-    pub fn new(num_buffers: usize) -> BufferPool {
-        BufferPool { buffers: vec![vec![0; 1024]; num_buffers], fulfiller: None }
+    pub fn new(buf_size: usize, num_buffers: usize) -> BufferPool {
+        BufferPool { buffers: vec![vec![0; buf_size]; num_buffers], waiting: None }
     }
 
+    /// Retrieves a buffer from the pool, waiting until one is available if there are none
+    /// already available. Fails if another task is already waiting for a buffer.
     pub fn pop(&mut self) -> gj::Promise<Vec<u8>, ()> {
         match self.buffers.pop() {
             Some(buf) => gj::Promise::fulfilled(buf),
             None => {
-                if self.fulfiller.is_some() {
+                if self.waiting.is_some() {
                     gj::Promise::rejected(())
                 } else {
                     let (promise, fulfiller) = gj::new_promise_and_fulfiller();
-                    self.fulfiller = Some(fulfiller);
+                    self.waiting = Some(fulfiller);
                     promise
                 }
             }
         }
     }
 
+    /// Returns a buffer to the pool.
     pub fn push(&mut self, buf: Vec<u8>) {
-        match self.fulfiller.take() {
+        match self.waiting.take() {
             Some(fulfiller) => fulfiller.fulfill(buf),
             None => self.buffers.push(buf),
         }
     }
 }
 
-struct Reaper {
-    buffer_pool: Rc<RefCell<BufferPool>>,
-}
+/// This is the state that gets threaded through the echo loop. When the echo loop is done,
+/// the Vec will get returned to the buffer pool.
+type TaskState = (gj::io::tcp::Stream, Vec<u8>);
 
-impl gj::TaskReaper<ThreadedState, gj::io::Error<ThreadedState>> for Reaper {
-    fn task_succeeded(&mut self, (_, buf): ThreadedState) {
-        self.buffer_pool.borrow_mut().push(buf);
-    }
-    fn task_failed(&mut self, error: gj::io::Error<ThreadedState>) {
-        self.buffer_pool.borrow_mut().push(error.state.1);
-        println!("Task failed: {}", error.error);
-    }
-}
-
-type ThreadedState = (::gj::io::tcp::Stream, Vec<u8>);
-
-fn echo<S,B>(stream: S, buf: B) -> gj::Promise<(S, B), gj::io::Error<(S, B)>>
-    where S: AsyncRead + AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
+/// Reads `buf`-sized chunks of bytes from a stream until end-of-file, immediately writing each
+/// chunk back to the same stream. Note that this function is recursive. In a naive implementation
+/// of promises, such a function could potentially create an unbounded chain of promises. However,
+/// GJ implements a tail-call optimization that shortens promise chains when possible, and therefore
+/// this loop can run indefinitely, consuming only a small, bounded amount of memory.
+fn echo(stream: gj::io::tcp::Stream, buf: Vec<u8>)
+        -> gj::Promise<TaskState, gj::io::Error<TaskState>>
 {
+    use gj::io::{AsyncRead, AsyncWrite};
     stream.try_read(buf, 1).then(move |(stream, buf, n)| {
-        if n == 0 {
-            // EOF
+        if n == 0 { // EOF
             Ok(gj::Promise::fulfilled((stream, buf)))
         } else {
             Ok(stream.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
-                Ok((stream, slice)) => Ok(echo(stream, slice.buf)),
                 Err(gj::io::Error {state: (stream, slice), error}) =>
                     Err(gj::io::Error::new((stream, slice.buf), error)),
+                Ok((stream, slice)) => Ok(echo(stream, slice.buf)),
             }))
         }
     })
 }
 
+/// The task reaper is responsible for returning buffers to the pool once tasks are done with them.
+struct Reaper {
+    buffer_pool: Rc<RefCell<BufferPool>>,
+}
+
+impl gj::TaskReaper<TaskState, gj::io::Error<TaskState>> for Reaper {
+    fn task_succeeded(&mut self, (_, buf): TaskState) {
+        self.buffer_pool.borrow_mut().push(buf);
+    }
+    fn task_failed(&mut self, error: gj::io::Error<TaskState>) {
+        self.buffer_pool.borrow_mut().push(error.state.1);
+        println!("Task failed: {}", error.error);
+    }
+}
+
+
 fn accept_loop(listener: gj::io::tcp::Listener,
-               mut task_set: gj::TaskSet<ThreadedState, gj::io::Error<ThreadedState>>,
+               mut task_set: gj::TaskSet<TaskState, gj::io::Error<TaskState>>,
                buffer_pool: Rc<RefCell<BufferPool>>)
                -> gj::Promise<(), ::std::io::Error>
 {
@@ -114,9 +128,10 @@ pub fn main() {
         println!("usage: {} HOST:PORT", args[0]);
         return;
     }
-    let buffer_pool = Rc::new(RefCell::new(BufferPool::new(64)));
+    let buffer_pool = Rc::new(RefCell::new(BufferPool::new(1024, 64)));
 
     gj::EventLoop::top_level(move |wait_scope| {
+        use std::net::ToSocketAddrs;
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(gj::io::tcp::Listener::bind(addr));
         let reaper = Box::new(Reaper { buffer_pool: buffer_pool.clone() });

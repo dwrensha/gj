@@ -302,7 +302,7 @@ pub trait FulfillerDropped {
 }
 
 /// A handle that can be used to fulfill or reject a promise. If you think of a promise
-/// as the receiving end of a one-shot channel, then this is the sending end.
+/// as the receiving end of a oneshot channel, then this is the sending end.
 pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>,
     done: bool,
@@ -366,7 +366,8 @@ impl <T, E> TaskSet <T, E> {
     }
 }
 
-/// Callbacks to be invoked when a task in a `TaskSet` finishes.
+/// Callbacks to be invoked when a task in a `TaskSet` finishes. You are required to
+/// implement at least the failure case.
 pub trait TaskReaper<T, E> where T: 'static, E: 'static {
     fn task_succeeded(&mut self, _value: T) {}
     fn task_failed(&mut self, error: E);
