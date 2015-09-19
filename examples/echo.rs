@@ -106,7 +106,8 @@ impl gj::TaskReaper<TaskState, gj::io::Error<TaskState>> for Reaper {
     }
 }
 
-
+/// Waits for a buffer from the pool, accepts a connection, then spawns an echo() task on that
+/// connection with that buffer.
 fn accept_loop(listener: gj::io::tcp::Listener,
                mut task_set: gj::TaskSet<TaskState, gj::io::Error<TaskState>>,
                buffer_pool: Rc<RefCell<BufferPool>>)

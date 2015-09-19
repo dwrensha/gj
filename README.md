@@ -9,9 +9,9 @@ EXPERIMENTAL! UNSTABLE! A WORK IN PROGRESS!
 GJ is a port of the
 [KJ concurrency framework](https://capnproto.org/cxxrpc.html#kj-concurrency-framework)
 into Rust.
+A GJ event loop allows you to execute many lightweight stackless tasks on a single operating system thread.
+You can share mutable data between tasks without any need for mutexes or atomics.
+GJ also provides a completion-based I/O interface.
 
-A GJ event loop allows you to register callbacks to be executed when nonblocking IO completes.
-You can have many threads, each with their own GJ event loop.
-A single event loop runs on a single thread,
-so you can share mutable data between callbacks without any need for mutexes or atomics.
+
 
