@@ -29,7 +29,7 @@ use gj::io::{AsyncRead, AsyncWrite};
 
 struct BufferPool {
     buffers: Vec<Vec<u8>>,
-    fulfiller: Option<Box<gj::PromiseFulfiller<Vec<u8>, ()>>>,
+    fulfiller: Option<gj::PromiseFulfiller<Vec<u8>, ()>>,
 }
 
 impl BufferPool {

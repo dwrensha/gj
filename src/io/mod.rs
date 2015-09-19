@@ -194,8 +194,8 @@ fn write_internal<W, T>(mut writer: W,
 }
 
 struct FdObserver {
-    read_fulfiller: Option<Box<PromiseFulfiller<(), ::std::io::Error>>>,
-    write_fulfiller: Option<Box<PromiseFulfiller<(), ::std::io::Error>>>,
+    read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
+    write_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
 }
 
 impl FdObserver {
@@ -319,5 +319,5 @@ impl Drop for TimeoutDropper {
 }
 
 struct Timeout {
-    fulfiller: Box<PromiseFulfiller<(), ::std::io::Error>>,
+    fulfiller: PromiseFulfiller<(), ::std::io::Error>,
 }

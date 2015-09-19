@@ -296,20 +296,31 @@ impl EventLoop {
     }
 }
 
-/// A callback that can be used to fulfill or reject a promise.
-pub trait PromiseFulfiller<T, E> where T: 'static, E: 'static {
-    fn fulfill(self: Box<Self>, value: T);
-    fn reject(self: Box<Self>, error: E);
+/// A handle that can be used to fulfill or reject a promise. If you think of a promise
+/// as the receiving end of a one-shot channel, then this is the sending end.
+pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static {
+    hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>
 }
 
+impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static {
+    pub fn fulfill(self, value: T) {
+        self.hub.borrow_mut().fulfill(value);
+    }
+
+    pub fn reject(self, error: E) {
+        self.hub.borrow_mut().reject(error);
+    }
+}
+
+
 /// Creates a new promise/fulfiller pair.
-pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, Box<PromiseFulfiller<T, E>>)
+pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, PromiseFulfiller<T, E>)
     where T: 'static,
           E: 'static
 {
     let result = ::std::rc::Rc::new(::std::cell::RefCell::new(PromiseAndFulfillerHub::new()));
     let result_promise: Promise<T, E> = Promise { node: Box::new(result.clone())};
-    (result_promise, Box::new(result))
+    (result_promise, PromiseFulfiller{ hub: result })
 }
 
 

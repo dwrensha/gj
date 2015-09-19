@@ -24,7 +24,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::result::Result;
 use handle_table::{Handle};
-use {PromiseFulfiller, EventLoop, TaskReaper};
+use {EventLoop, TaskReaper};
 
 pub mod promise_node;
 
@@ -206,14 +206,14 @@ impl <T, E> PromiseAndFulfillerHub<T, E> {
 }
 
 impl <T, E> PromiseAndFulfillerHub<T, E> {
-    fn fulfill(&mut self, value: T) {
+    pub fn fulfill(&mut self, value: T) {
         if self.result.is_none() {
             self.result = Some(Ok(value));
         }
         self.on_ready_event.arm();
     }
 
-    fn reject(&mut self, error: E) {
+    pub fn reject(&mut self, error: E) {
         if self.result.is_none() {
             self.result = Some(Err(error));
         }
@@ -229,18 +229,6 @@ impl <T, E> PromiseNode<T, E> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndF
             None => panic!("no result!"),
             Some(r) => r
         }
-    }
-}
-
-impl <T, E> PromiseFulfiller<T, E> for Rc<RefCell<PromiseAndFulfillerHub<T, E>>>
-    where T: 'static, E: 'static
-{
-    fn fulfill(self: Box<Self>, value: T) {
-        self.borrow_mut().fulfill(value);
-    }
-
-    fn reject(self: Box<Self>, error: E) {
-        self.borrow_mut().reject(error);
     }
 }
 
