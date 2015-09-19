@@ -30,7 +30,7 @@ extern crate nix;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::result::Result;
-use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub,
+use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub, PromiseAndFulfillerWrapper,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
 
 pub mod io;
@@ -296,17 +296,18 @@ impl EventLoop {
     }
 }
 
-/*pub trait FulfillerDropped {
+/// Specifies an error to generate when a PromiseFulfiller is dropped.
+pub trait FulfillerDropped {
     fn fulfiller_dropped() -> Self;
-}*/
+}
 
 /// A handle that can be used to fulfill or reject a promise. If you think of a promise
 /// as the receiving end of a one-shot channel, then this is the sending end.
-pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static {
+pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>
 }
 
-impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static {
+impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     pub fn fulfill(self, value: T) {
         self.hub.borrow_mut().fulfill(value);
     }
@@ -316,7 +317,6 @@ impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static {
     }
 }
 
-/*
 impl <T, E> Drop for PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     fn drop(&mut self) {
         self.hub.borrow_mut().reject(E::fulfiller_dropped());
@@ -331,15 +331,16 @@ impl FulfillerDropped for ::std::io::Error {
     fn fulfiller_dropped() -> ::std::io::Error {
         ::std::io::Error::new(::std::io::ErrorKind::Other, "Promise fulfiller was dropped.")
     }
-}*/
+}
 
 /// Creates a new promise/fulfiller pair.
 pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, PromiseFulfiller<T, E>)
     where T: 'static,
-          E: 'static
+          E: 'static + FulfillerDropped
 {
-    let result = ::std::rc::Rc::new(::std::cell::RefCell::new(PromiseAndFulfillerHub::new()));
-    let result_promise: Promise<T, E> = Promise { node: Box::new(result.clone())};
+    let result = Rc::new(RefCell::new(PromiseAndFulfillerHub::new()));
+    let result_promise: Promise<T, E> =
+        Promise { node: Box::new(PromiseAndFulfillerWrapper::new(result.clone()))};
     (result_promise, PromiseFulfiller{ hub: result })
 }
 

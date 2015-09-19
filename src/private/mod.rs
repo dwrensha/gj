@@ -221,12 +221,30 @@ impl <T, E> PromiseAndFulfillerHub<T, E> {
     }
 }
 
-impl <T, E> PromiseNode<T, E> for ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>> {
+pub struct PromiseAndFulfillerWrapper<T, E> where T: 'static, E: 'static {
+    hub: ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>>
+}
+
+impl <T, E> PromiseAndFulfillerWrapper<T, E> {
+    pub fn new(hub: ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>>)
+               -> PromiseAndFulfillerWrapper<T, E>
+    {
+        PromiseAndFulfillerWrapper { hub: hub }
+    }
+}
+
+impl <T, E> Drop for PromiseAndFulfillerWrapper<T, E> {
+    fn drop(&mut self) {
+        self.hub.borrow_mut().on_ready_event = OnReadyEvent::Empty;
+    }
+}
+
+impl <T, E> PromiseNode<T, E> for PromiseAndFulfillerWrapper<T, E> {
     fn on_ready(&mut self, event: EventHandle) {
-        self.borrow_mut().on_ready_event.init(event);
+        self.hub.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<T, E> {
-        match ::std::mem::replace(&mut self.borrow_mut().result, None) {
+        match ::std::mem::replace(&mut self.hub.borrow_mut().result, None) {
             None => panic!("no result!"),
             Some(r) => r
         }

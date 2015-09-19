@@ -308,6 +308,18 @@ fn array_join() {
 }
 
 #[test]
+fn array_join_drop_then_fulfill() {
+    gj::EventLoop::top_level(|_wait_scope| {
+        let (p, fulfiller) = gj::new_promise_and_fulfiller::<(), ()>();
+        let promises = vec![p];
+        let promise = gj::join_promises(promises);
+        drop(promise);
+        fulfiller.fulfill(());
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn exclusive_join() {
     gj::EventLoop::top_level(|wait_scope| {
         let left = gj::Promise::fulfilled(()).map(|()| {

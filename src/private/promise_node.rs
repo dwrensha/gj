@@ -29,7 +29,7 @@ use private::{Event, EventDropper, OpaqueEventDropper, EventHandle, OnReadyEvent
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
-/// function (implements `then()`).
+/// function (implements `map()`).
 pub struct Transform<T, E, E1, DepT, Func>
 where Func: FnOnce(Result<DepT, E>) -> Result<T, E1> {
     dependency: Box<PromiseNode<DepT, E>>,
