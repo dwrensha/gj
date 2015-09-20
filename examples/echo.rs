@@ -19,9 +19,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-//! Single-threaded echo server with a bounded buffer pool. Allocates N buffers upon initialization
-//! and uses them to serve up to N clients concurrently. When all buffers are in use, the server
-//! waits until the next buffer becomes available before accepting the next client connection.
+//! Single-threaded TCP echo server with a bounded buffer pool. Allocates N buffers upon
+//! initialization and uses them to serve up to N clients concurrently. When all buffers are in use,
+//! the server waits until the next buffer becomes available before accepting the next client
+//! connection.
 
 extern crate gj;
 

@@ -31,11 +31,13 @@ use private::{with_current_event_loop};
 pub struct Stream {
     stream: ::mio::unix::UnixStream,
     handle: Handle,
+    no_send: ::std::marker::PhantomData<*mut ()>, // impl !Send for Stream
 }
 
 pub struct Listener {
     listener: ::mio::unix::UnixListener,
     handle: Handle,
+    no_send: ::std::marker::PhantomData<*mut ()>, // impl !Send for Listener
 }
 
 impl Drop for Listener {
@@ -55,7 +57,7 @@ impl Listener {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
-            Ok(Listener { listener: listener, handle: handle })
+            Ok(Listener { listener: listener, handle: handle, no_send: ::std::marker::PhantomData })
         })
     }
 
@@ -118,7 +120,7 @@ impl Drop for Stream {
 
 impl Stream {
     fn new(stream: ::mio::unix::UnixStream, handle: Handle) -> Stream {
-        Stream { stream: stream, handle: handle }
+        Stream { stream: stream, handle: handle, no_send: ::std::marker::PhantomData }
     }
 
     pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<Stream, ::std::io::Error> {
@@ -196,13 +198,13 @@ pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream)
 
     let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd0) };
     let handle = try!(register_new_handle(&io));
-    let socket_stream = Stream { stream: io, handle: handle };
+    let socket_stream = Stream::new(io, handle);
 
     let join_handle = ::std::thread::spawn(move || {
         let _result = EventLoop::top_level(move |wait_scope| {
             let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd1) };
             let handle = try!(register_new_handle(&io));
-            let socket_stream = Stream { stream: io, handle: handle };
+            let socket_stream = Stream::new(io, handle);
             start_func(socket_stream, &wait_scope)
         });
     });

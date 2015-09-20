@@ -31,11 +31,13 @@ use private::{with_current_event_loop};
 pub struct Stream {
     stream: ::mio::tcp::TcpStream,
     handle: Handle,
+    no_send: ::std::marker::PhantomData<*mut ()>, // impl !Send for Stream
 }
 
 pub struct Listener {
     listener: ::mio::tcp::TcpListener,
     handle: Handle,
+    no_send: ::std::marker::PhantomData<*mut ()>, // impl !Send for Listener
 }
 
 impl Drop for Listener {
@@ -55,8 +57,7 @@ impl Listener {
             try!(event_loop.event_port.borrow_mut().reactor.register_opt(&listener, ::mio::Token(handle.val),
                                                                          ::mio::EventSet::readable(),
                                                                          ::mio::PollOpt::edge()));
-            Ok(Listener { listener: listener,
-                          handle: handle })
+            Ok(Listener { listener: listener, handle: handle, no_send: ::std::marker::PhantomData })
         })
     }
 
@@ -119,7 +120,7 @@ impl Drop for Stream {
 
 impl Stream {
     fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> Stream {
-        Stream { stream: stream, handle: handle }
+        Stream { stream: stream, handle: handle, no_send: ::std::marker::PhantomData }
     }
 
     pub fn connect(addr: ::std::net::SocketAddr) -> Promise<Stream, ::std::io::Error> {
