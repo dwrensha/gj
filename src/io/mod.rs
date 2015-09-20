@@ -21,7 +21,6 @@
 
 //! Asynchronous input and output.
 
-use std::ops::{DerefMut, Deref};
 use std::result::Result;
 use handle_table::{HandleTable, Handle};
 use {EventPort, Promise, PromiseFulfiller, new_promise_and_fulfiller};
@@ -61,12 +60,12 @@ pub trait AsyncRead: 'static {
     /// Returns `self`, the modified `buf`, and the number of bytes actually read.
     /// Returns as soon as `min_bytes` are read or EOF is encountered.
     fn try_read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
-        where T: DerefMut<Target=[u8]>, Self: Sized;
+        where T: AsMut<[u8]>, Self: Sized;
 
     /// Like `try_read()`, but returns an error if EOF is encountered before `min_bytes`
     /// can be read.
     fn read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
-        where T: DerefMut<Target=[u8]>, Self: Sized
+        where T: AsMut<[u8]>, Self: Sized
     {
         self.try_read(buf, min_bytes).map(move |(s, buf, n)| {
             if n < min_bytes {
@@ -84,24 +83,23 @@ pub trait AsyncWrite: 'static {
     /// Attempts to write all `buf.len()` bytes from `buf` into the stream. Returns `self` and `buf`
     /// once all of the bytes have been written.
     fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>>
-        where T: Deref<Target=[u8]>, Self: Sized;
+        where T: AsRef<[u8]>, Self: Sized;
 }
 
-pub struct Slice<T> where T: Deref<Target=[u8]> {
+pub struct Slice<T> where T: AsRef<[u8]> {
     pub buf: T,
     pub end: usize,
 }
 
-impl <T> Slice<T> where T: Deref<Target=[u8]> {
+impl <T> Slice<T> where T: AsRef<[u8]> {
     pub fn new(buf: T, end: usize) -> Slice<T> {
         Slice { buf: buf, end: end }
     }
 }
 
-impl <T> Deref for Slice<T> where T: Deref<Target=[u8]> {
-    type Target=[u8];
-    fn deref<'a>(&'a self) -> &'a [u8] {
-        &self.buf[0..self.end]
+impl <T> AsRef<[u8]> for Slice<T> where T: AsRef<[u8]> {
+    fn as_ref<'a>(&'a self) -> &'a [u8] {
+        &self.buf.as_ref()[0..self.end]
     }
 }
 
@@ -126,12 +124,12 @@ fn try_read_internal<R, T>(mut reader: R,
                            mut buf: T,
                            mut already_read: usize,
                            min_bytes: usize) -> Result<Promise<(R, T, usize), Error<(R, T)>>, Error<(R, T)>>
-    where T: DerefMut<Target=[u8]>, R: ::mio::TryRead + HasHandle
+    where T: AsMut<[u8]>, R: ::mio::TryRead + HasHandle
 {
     use mio::TryRead;
 
     while already_read < min_bytes {
-        let read_result = match reader.try_read(&mut buf[already_read..]) {
+        let read_result = match reader.try_read(&mut buf.as_mut()[already_read..]) {
             Err(e) => return Err(Error::new((reader, buf), e)),
             Ok(v) => v,
         };
@@ -163,12 +161,12 @@ fn try_read_internal<R, T>(mut reader: R,
 fn write_internal<W, T>(mut writer: W,
                         buf: T,
                         mut already_written: usize) -> Result<Promise<(W, T), Error<(W, T)>>, Error<(W, T)>>
-    where T: Deref<Target=[u8]>, W: ::mio::TryWrite + HasHandle
+    where T: AsRef<[u8]>, W: ::mio::TryWrite + HasHandle
 {
     use mio::TryWrite;
 
-    while already_written < buf.len() {
-        let write_result = match writer.try_write(&buf[already_written..]) {
+    while already_written < buf.as_ref().len() {
+        let write_result = match writer.try_write(&buf.as_ref()[already_written..]) {
             Err(e) => return Err(Error::new((writer, buf), e)),
             Ok(v) => v,
         };

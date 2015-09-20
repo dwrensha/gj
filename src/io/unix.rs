@@ -19,7 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use std::ops::{DerefMut, Deref};
 use std::result::Result;
 use handle_table::{Handle};
 use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
@@ -160,7 +159,7 @@ impl Stream {
 impl AsyncRead for Stream {
     fn try_read<T>(self, buf: T,
                    min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
-        where T: DerefMut<Target=[u8]>
+        where T: AsMut<[u8]>
     {
         Promise::fulfilled(()).then(move |()| {
             try_read_internal(self, buf, 0, min_bytes)
@@ -169,7 +168,7 @@ impl AsyncRead for Stream {
 }
 
 impl AsyncWrite for Stream {
-    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: Deref<Target=[u8]> {
+    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: AsRef<[u8]> {
         Promise::fulfilled(()).then(move |()| {
             write_internal(self, buf, 0)
         })
