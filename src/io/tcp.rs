@@ -136,8 +136,7 @@ impl Stream {
                 let promise =
                     event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
                 Ok(promise.map(move |()| {
-                    // TODO how to test for error?
-                    //try!(stream.take_socket_error());
+                    try!(stream.take_socket_error());
                     Ok(Stream::new(stream, handle))
                 }))
             })
