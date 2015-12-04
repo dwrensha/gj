@@ -268,12 +268,12 @@ impl ::mio::Handler for Handler {
 
 impl EventPort for MioEventPort {
     fn wait(&mut self) -> bool {
-        self.reactor.run_once(&mut self.handler).unwrap();
+        self.reactor.run_once(&mut self.handler, None).unwrap();
         false
     }
 
     fn poll(&mut self) -> bool {
-        self.reactor.run_once(&mut self.handler).unwrap();
+        self.reactor.run_once(&mut self.handler, None).unwrap();
         false
     }
 }
