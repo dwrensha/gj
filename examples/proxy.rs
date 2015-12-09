@@ -24,7 +24,7 @@ use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
 
 fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(R,W,B), gj::io::Error<(R,W,B)>>
-    where R: AsyncRead, W: AsyncWrite, B: ::std::ops::DerefMut<Target=[u8]> + 'static
+    where R: AsyncRead, W: AsyncWrite, B: AsMut<[u8]> + AsRef<[u8]> + 'static
 {
     src.try_read(buf, 1).then_else(move |r| match r {
         Ok((src, buf, n)) => {
