@@ -87,8 +87,7 @@ pub fn main() {
         let listener = try!(::gj::io::tcp::Listener::bind(addr));
 
         let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
-        return accept_loop(listener,
-                           outbound_addr,
-                           gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope);
+        accept_loop(listener, outbound_addr,
+                    gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope)
     }).unwrap();
 }
