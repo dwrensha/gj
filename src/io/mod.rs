@@ -124,71 +124,71 @@ fn try_read_internal<R, T>(mut reader: R,
                            mut buf: T,
                            mut already_read: usize,
                            min_bytes: usize) -> Result<Promise<(R, T, usize), Error<(R, T)>>, Error<(R, T)>>
-    where T: AsMut<[u8]>, R: ::mio::TryRead + HasHandle
+    where T: AsMut<[u8]>, R: ::std::io::Read + HasHandle
 {
-    use mio::TryRead;
+    use std::io::Read;
 
     while already_read < min_bytes {
-        let read_result = match reader.try_read(&mut buf.as_mut()[already_read..]) {
-            Err(e) => return Err(Error::new((reader, buf), e)),
-            Ok(v) => v,
-        };
-        match read_result {
-            Some(0) => {
+        match reader.read(&mut buf.as_mut()[already_read..]) {
+            Ok(0) => {
                 // EOF
                 return Ok(Promise::fulfilled((reader, buf, already_read)));
             }
-            Some(n) => {
+            Ok(n) => {
                 already_read += n;
             }
-            None => { // would block
-                return with_current_event_loop(move |event_loop| {
-                    let promise =
-                        event_loop.event_port.borrow_mut()
-                        .handler.observers[reader.get_handle()].when_becomes_readable();
-                    return Ok(promise.then_else(move |r| match r {
-                        Ok(()) => try_read_internal(reader, buf, already_read, min_bytes),
-                        Err(e) => Err(Error::new((reader, buf), e))
-                    }));
-                });
+            Err(e) => {
+                if e.kind() != ::std::io::ErrorKind::WouldBlock {
+                    return Err(Error::new((reader, buf), e))
+                } else {
+                    return with_current_event_loop(move |event_loop| {
+                        let promise =
+                            event_loop.event_port.borrow_mut()
+                            .handler.observers[reader.get_handle()].when_becomes_readable();
+                        Ok(promise.then_else(move |r| match r {
+                            Ok(()) => try_read_internal(reader, buf, already_read, min_bytes),
+                            Err(e) => Err(Error::new((reader, buf), e))
+                        }))
+                    });
+                }
             }
         }
     }
 
-    return Ok(Promise::fulfilled((reader, buf, already_read)));
+    Ok(Promise::fulfilled((reader, buf, already_read)))
 }
 
 fn write_internal<W, T>(mut writer: W,
                         buf: T,
                         mut already_written: usize) -> Result<Promise<(W, T), Error<(W, T)>>, Error<(W, T)>>
-    where T: AsRef<[u8]>, W: ::mio::TryWrite + HasHandle
+    where T: AsRef<[u8]>, W: ::std::io::Write + HasHandle
 {
-    use mio::TryWrite;
+    use ::std::io::Write;
 
     while already_written < buf.as_ref().len() {
-        let write_result = match writer.try_write(&buf.as_ref()[already_written..]) {
-            Err(e) => return Err(Error::new((writer, buf), e)),
-            Ok(v) => v,
-        };
-        match write_result {
-            Some(n) => {
+        match writer.write(&buf.as_ref()[already_written..]) {
+            Ok(n) => {
                 already_written += n;
             }
-            None => { // would block
-                return with_current_event_loop(move |event_loop| {
-                    let promise =
-                        event_loop.event_port.borrow_mut()
-                        .handler.observers[writer.get_handle()].when_becomes_writable();
-                    Ok(promise.then_else(move |r| match r {
-                        Ok(()) => write_internal(writer, buf, already_written),
-                        Err(e) => Err(Error::new((writer, buf), e))
-                    }))
-                });
+            Err(e) => {
+                if e.kind() != ::std::io::ErrorKind::WouldBlock {
+                    return Err(Error::new((writer, buf), e))
+                } else {
+                    return with_current_event_loop(move |event_loop| {
+                        let promise =
+                            event_loop.event_port.borrow_mut()
+                            .handler.observers[writer.get_handle()].when_becomes_writable();
+                        Ok(promise.then_else(move |r| match r {
+                            Ok(()) => write_internal(writer, buf, already_written),
+                            Err(e) => Err(Error::new((writer, buf), e))
+                        }))
+                    });
+                }
             }
         }
     }
 
-    return Ok(Promise::fulfilled((writer, buf)));
+    Ok(Promise::fulfilled((writer, buf)))
 }
 
 struct FdObserver {

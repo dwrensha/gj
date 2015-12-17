@@ -91,18 +91,19 @@ impl Listener {
     }
 }
 
-impl ::mio::TryRead for Stream {
-    fn try_read(&mut self, buf: &mut [u8]) -> ::std::io::Result<Option<usize>> {
-        use mio::TryRead;
-        self.stream.try_read(buf)
+impl ::std::io::Read for Stream {
+    fn read(&mut self, buf: &mut [u8]) -> ::std::io::Result<usize> {
+        use std::io::Read;
+        self.stream.read(buf)
     }
 }
 
-impl ::mio::TryWrite for Stream {
-    fn try_write(&mut self, buf: &[u8]) -> ::std::io::Result<Option<usize>> {
-        use mio::TryWrite;
-        self.stream.try_write(buf)
+impl ::std::io::Write for Stream {
+    fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
+        use std::io::Write;
+        self.stream.write(buf)
     }
+    fn flush(&mut self) -> ::std::io::Result<()> { Ok(()) }
 }
 
 impl HasHandle for Stream {
