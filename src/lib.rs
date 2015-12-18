@@ -124,6 +124,11 @@ impl <T, E> Promise <T, E> {
         Promise { node: Box::new(promise_node::NeverDone::new()) }
     }
 
+    /// Forks the promise, so that multiple different clients can independently wait on the result.
+    pub fn fork(self) -> ForkedPromise<T> where T: Clone {
+        ForkedPromise::new(self)
+    }
+
     /// Runs the event loop until the promise is fulfilled.
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
@@ -153,6 +158,23 @@ impl <T, E> Promise <T, E> {
 /// A scope in which asynchronous programming can occur. Corresponds to the top level scope
 /// of some event loop.
 pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
+
+/// The result of Promise::fork(). Allows branches to be created.
+pub struct ForkedPromise<T> where T: 'static + Clone {
+    hub: Rc<RefCell<promise_node::ForkHub<T>>>,
+}
+
+impl <T> ForkedPromise<T> where T: 'static + Clone {
+    fn new<E>(inner: Promise<T, E>) -> ForkedPromise<T> {
+        ForkedPromise {
+            hub: Rc::new(RefCell::new(promise_node::ForkHub::new(inner.map_err(|_| () ).node))),
+        }
+    }
+
+    pub fn add_branch(&mut self) -> Promise<T, ()> {
+        promise_node::ForkHub::add_branch(&self.hub)
+    }
+}
 
 /// Interface between an `EventLoop` and events originating from outside of the loop's thread.
 trait EventPort {

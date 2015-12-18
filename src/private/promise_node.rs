@@ -392,3 +392,79 @@ impl <T, U, E> PromiseNode<T, E> for Wrapper<T, U, E> {
     }
 }
 
+enum ForkHubState<T> {
+    Waiting(Box<PromiseNode<T, ()>>),
+    Done(Result<T, ()>),
+}
+
+pub struct ForkHub<T> where T: 'static + Clone {
+    state: ForkHubState<T>,
+    branches: Vec<::std::rc::Weak<RefCell<OnReadyEvent>>>,
+    dropper: EventDropper,
+}
+
+impl <T> ForkHub<T> where T: 'static + Clone {
+    pub fn new(mut inner: Box<PromiseNode<T, ()>>) -> ForkHub<T> {
+        // TODO(someday): KJ calls setSelfPointer() here.
+        let (handle, dropper) = EventHandle::new();
+        inner.on_ready(handle);
+        ForkHub { state: ForkHubState::Waiting(inner), branches: Vec::new(), dropper: dropper }
+    }
+
+    pub fn add_branch(hub: &Rc<RefCell<ForkHub<T>>>) -> Promise<T, ()> {
+        let on_ready_event = Rc::new(RefCell::new(OnReadyEvent::Empty));
+        hub.borrow_mut().branches.push(Rc::downgrade(&on_ready_event));
+        let node = ForkBranch {
+            hub: hub.clone(),
+            on_ready_event: on_ready_event,
+        };
+        Promise { node: Box::new(node) }
+    }
+}
+
+impl <T> Event for ForkHub<T> where T: Clone {
+    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
+        // Dependency is ready.  Fetch its result and then delete the node.
+        let state = ::std::mem::replace(&mut self.state, ForkHubState::Done(Err(())));
+        let result = match state {
+            ForkHubState::Waiting(inner) => inner.get(),
+            _ => unreachable!(),
+        };
+
+        for branch in &self.branches {
+            match branch.upgrade() {
+                None => (),
+                Some(b) => {
+                    b.borrow_mut().arm();
+                }
+            }
+        }
+        self.state = ForkHubState::Done(result);
+        None
+    }
+}
+
+pub struct ForkBranch <T> where T: 'static + Clone {
+    hub: Rc<RefCell<ForkHub<T>>>,
+    on_ready_event: Rc<RefCell<OnReadyEvent>>,
+}
+
+
+impl <T> ForkBranch<T> where T: Clone {
+
+}
+
+impl <T> PromiseNode<T, ()> for ForkBranch<T> where T: Clone {
+    fn on_ready(&mut self, event: EventHandle) {
+        self.on_ready_event.borrow_mut().init(event);
+    }
+    fn get(self: Box<Self>) -> Result<T, ()> {
+        let result = match &self.hub.borrow().state {
+            &ForkHubState::Done(Ok(ref v)) => Ok(v.clone()),
+            &ForkHubState::Done(Err(())) => Err(()),
+            _ => unreachable!(),
+        };
+        result
+    }
+}
+

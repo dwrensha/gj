@@ -386,3 +386,23 @@ fn recursion() {
         Ok(foo(100000).wait(wait_scope).unwrap())
     }).unwrap();
 }
+
+#[test]
+fn fork() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let promise: gj::Promise<i32, ()> = gj::Promise::fulfilled(()).map(|()| { Ok(123) });
+        let mut fork = promise.fork();
+        let branch1 = fork.add_branch().map(|i| {
+            assert_eq!(123, i);
+            Ok(456)
+        });
+        let branch2 = fork.add_branch().map(|i| {
+            assert_eq!(123, i);
+            Ok(789)
+        });
+//        drop(fork);
+
+        branch1.wait(wait_scope).unwrap();
+        Ok(())
+    }).unwrap();
+}
