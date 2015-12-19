@@ -407,3 +407,26 @@ fn fork() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn eagerly_evaluate() {
+    use std::rc::Rc;
+    use std::cell::Cell;
+
+    gj::EventLoop::top_level(|wait_scope| {
+        let called: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let called1 = called.clone();
+        let mut promise: gj::Promise<(),()> = gj::Promise::fulfilled(()).map(move |()| {
+            called1.set(true);
+            Ok(())
+        });
+        gj::Promise::<(),()>::fulfilled(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+        assert_eq!(false, called.get());
+
+        promise = promise.eagerly_evaluate();
+        gj::Promise::<(),()>::fulfilled(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+
+        assert_eq!(true, called.get());
+        Ok(())
+    }).unwrap();
+}

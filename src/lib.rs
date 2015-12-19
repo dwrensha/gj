@@ -129,6 +129,13 @@ impl <T, E> Promise <T, E> {
         ForkedPromise::new(self)
     }
 
+    // Force eager evaluation of this promise.  Use this if you are going to hold on to the promise
+    // for awhile without consuming the result, but you want to make sure that the system actually
+    // processes it.
+    pub fn eagerly_evaluate(self) -> Promise<T, E> {
+        self.then(|v| { Ok(Promise::fulfilled(v)) })
+    }
+
     /// Runs the event loop until the promise is fulfilled.
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
