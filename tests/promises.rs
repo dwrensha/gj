@@ -400,9 +400,10 @@ fn fork() {
             assert_eq!(123, i);
             Ok(789)
         });
-//        drop(fork);
+        drop(fork);
 
-        branch1.wait(wait_scope).unwrap();
+        assert_eq!(456, branch1.wait(wait_scope).unwrap());
+        assert_eq!(789, branch2.wait(wait_scope).unwrap());
         Ok(())
     }).unwrap();
 }
