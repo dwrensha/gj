@@ -98,6 +98,10 @@ pub struct EventDropper {
 impl Drop for EventDropper {
     fn drop(&mut self) {
         with_current_event_loop(|event_loop| {
+            match event_loop.currently_firing.get() {
+                Some(h) if h == self.event_handle => panic!("Promise callback destroyed itself."),
+                _ => (),
+            }
             let maybe_event_node = event_loop.events.borrow_mut().remove(self.event_handle.0);
 
             match maybe_event_node {

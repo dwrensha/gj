@@ -213,6 +213,7 @@ pub struct EventLoop {
     head: private::EventHandle,
     tail: Cell<private::EventHandle>,
     depth_first_insertion_point: Cell<private::EventHandle>,
+    currently_firing: Cell<Option<private::EventHandle>>
 }
 
 
@@ -236,6 +237,7 @@ impl EventLoop {
                 head: head_handle,
                 tail: Cell::new(head_handle),
                 depth_first_insertion_point: Cell::new(head_handle), // insert after this node
+                currently_firing: Cell::new(None),
             };
 
             assert!(maybe_event_loop.borrow().is_none());
@@ -300,9 +302,11 @@ impl EventLoop {
         };
         self.depth_first_insertion_point.set(event_handle);
 
+        self.currently_firing.set(Some(event_handle));
         let mut event = ::std::mem::replace(&mut self.events.borrow_mut()[event_handle.0].event, None)
             .expect("No event to fire?");
         let _dropper = event.fire();
+        self.currently_firing.set(None);
 
         let maybe_next = self.events.borrow()[event_handle.0].next;
         self.events.borrow_mut()[self.head.0].next = maybe_next;

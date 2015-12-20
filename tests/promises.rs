@@ -409,6 +409,36 @@ fn fork() {
 }
 
 #[test]
+#[should_panic(expected = "Promise callback destroyed itself.")]
+#[allow(path_statements)]
+fn knotty() {
+    use std::rc::Rc;
+    use std::cell::RefCell;
+    gj::EventLoop::top_level(|wait_scope| {
+        let maybe_promise = Rc::new(RefCell::new(None));
+        let maybe_promise2 = maybe_promise.clone();
+
+        let knotted_promise: gj::Promise<(), ()> = gj::Promise::fulfilled(()).map(move |()| {
+
+            // We will arrange for this to be the only remaining reference to knotted_promise.
+            // AFter the callback runs, the promise will get dropped, triggering a panic.
+            maybe_promise2;
+
+            Ok(())
+        }).eagerly_evaluate();
+
+        *maybe_promise.borrow_mut() = Some(knotted_promise);
+        drop(maybe_promise);
+
+        // Get the event loop turning.
+        let wait_promise: gj::Promise<(),()> = gj::Promise::fulfilled(());
+        wait_promise.wait(wait_scope).unwrap();
+        Ok(())
+    }).unwrap()
+}
+
+#[test]
+#[allow(unused_assignments)]
 fn eagerly_evaluate() {
     use std::rc::Rc;
     use std::cell::Cell;
