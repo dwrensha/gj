@@ -403,7 +403,7 @@ fn exclusive_join() {
 
 
 #[test]
-fn recursion() {
+fn simple_recursion() {
     fn foo(n: u64) -> gj::Promise<(), ()> {
         gj::Promise::fulfilled(()).then(move |()| {
             if n == 0 {
@@ -421,6 +421,8 @@ fn recursion() {
 
 #[test]
 fn task_set_recursion() {
+    // At one point, this causes a "leaked events" panic.
+
     fn foo(n: u64, maybe_fulfiller: Option<gj::PromiseFulfiller<(),()>>) -> gj::Promise<(), ()> {
         gj::Promise::fulfilled(()).then(move |()| {
             match (n, maybe_fulfiller) {

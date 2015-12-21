@@ -20,7 +20,7 @@
 // THE SOFTWARE.
 
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::collections::HashMap;
 use std::result::Result;
 use handle_table::{Handle};
@@ -45,7 +45,11 @@ pub trait PromiseNode<T, E> {
     /// Arms the given event when the promised value is ready.
     fn on_ready(&mut self, event: EventHandle);
 
-    fn set_self_pointer(&mut self, _chain_state: Rc<RefCell<promise_node::ChainState<T, E>>>) {}
+    /// Tells the node that `_self_ptr` is the pointer that owns this node, and will continue to own
+    /// this node until it is destroyed or set_self_pointer() is called again. promise_node::Chain uses
+    /// this to shorten redundant chains.  The default implementation does nothing; only
+    /// promise_node::Chain should implement this.
+    fn set_self_pointer(&mut self, _self_ptr: Weak<RefCell<promise_node::ChainState<T, E>>>) {}
     fn get(self: Box<Self>) -> Result<T, E>;
 }
 

@@ -21,7 +21,7 @@
 
 #![allow(dead_code)]
 
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::result::Result;
 use {Promise};
@@ -98,8 +98,8 @@ impl <T, E> PromiseNode<T, E> for NeverDone<T, E> {
 }
 
 pub enum ChainState<T, E> where T: 'static, E: 'static {
-    Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>, Option<Rc<RefCell<ChainState<T, E>>>>),
-    Step2(Box<PromiseNode<T, E>>, Option<Rc<RefCell<ChainState<T, E>>>>),
+    Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>, Option<Weak<RefCell<ChainState<T, E>>>>),
+    Step2(Box<PromiseNode<T, E>>, Option<Weak<RefCell<ChainState<T, E>>>>),
     Step3 // done
 }
 
@@ -143,7 +143,7 @@ impl <T, E> Event for ChainEvent<T, E> {
                         shorten = true;
                     }
                     &mut ChainState::Step2(ref mut inner, None) => {
-                        inner.set_self_pointer(self_state);
+                        inner.set_self_pointer(Rc::downgrade(&self_state));
                     }
                     _ => { unreachable!() }
                 }
@@ -154,7 +154,8 @@ impl <T, E> Event for ChainEvent<T, E> {
                     match state {
                         ChainState::Step2(mut inner, Some(self_ptr)) => {
                             inner.set_self_pointer(self_ptr.clone());
-                            let self_state = ::std::mem::replace(&mut *self_ptr.borrow_mut(),
+                            let strong_self_ptr = self_ptr.upgrade().expect("dangling self pointer?");
+                            let self_state = ::std::mem::replace(&mut *strong_self_ptr.borrow_mut(),
                                                                  ChainState::Step2(inner, None));
                             match self_state {
                                 ChainState::Step2(inner, _) => {
@@ -220,7 +221,7 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
             }
         }
     }
-    fn set_self_pointer(&mut self, chain_state: Rc<RefCell<ChainState<T, E>>>) {
+    fn set_self_pointer(&mut self, chain_state: Weak<RefCell<ChainState<T, E>>>) {
         match &mut *self.state.borrow_mut() {
             &mut ChainState::Step1(_, _, ref mut self_ptr) => {
                 *self_ptr = Some(chain_state);
