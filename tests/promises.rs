@@ -271,8 +271,8 @@ impl TaskReaperImpl {
     }
 }
 
-impl gj::TaskReaper<(), Box<::std::error::Error>> for TaskReaperImpl {
-    fn task_failed(&mut self, _error: Box<::std::error::Error>) {
+impl gj::TaskReaper<(), ()> for TaskReaperImpl {
+    fn task_failed(&mut self, _error: ()) {
         self.error_count.set(self.error_count.get() + 1);
     }
 }
@@ -287,8 +287,8 @@ fn task_set() {
             Ok(())
         }));
         tasks.add(gj::Promise::fulfilled(()).map(|()| {
-            Err(::std::io::Error::new(::std::io::ErrorKind::Other, "Fake IO Error"))
-        }).lift());
+            Err(())
+        }));
         tasks.add(gj::Promise::fulfilled(()).map(|()| {
             Ok(())
         }));
@@ -416,6 +416,32 @@ fn recursion() {
 
     gj::EventLoop::top_level(|wait_scope| {
         Ok(foo(100000).wait(wait_scope).unwrap())
+    }).unwrap();
+}
+
+#[test]
+fn task_set_recursion() {
+    fn foo(n: u64, maybe_fulfiller: Option<gj::PromiseFulfiller<(),()>>) -> gj::Promise<(), ()> {
+        gj::Promise::fulfilled(()).then(move |()| {
+            match (n, maybe_fulfiller) {
+                (0, _) => panic!("this promise should have been cancelled"),
+                (1, Some(fulfiller)) => {
+                    fulfiller.fulfill(());
+                    Ok(foo(n-1, None))
+                }
+                (n, maybe_fulfiller) => {
+                    Ok(foo(n-1, maybe_fulfiller))
+                }
+            }
+        })
+    }
+
+    gj::EventLoop::top_level(|wait_scope| {
+        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
+        let (promise, fulfiller) = gj::new_promise_and_fulfiller();
+        tasks.add(foo(2, Some(fulfiller)));
+        promise.wait(wait_scope).unwrap();
+        Ok(())
     }).unwrap();
 }
 
