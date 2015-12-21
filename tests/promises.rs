@@ -299,6 +299,17 @@ fn task_set() {
 }
 
 #[test]
+fn drop_task_set() {
+    // At one point, this causes a "leaked events" panic.
+    gj::EventLoop::top_level(|_wait_scope| {
+        let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
+        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl {error_count: error_count}));
+        tasks.add(gj::Promise::never_done());
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn array_join() {
     gj::EventLoop::top_level(|wait_scope| {
         let promises: Vec<gj::Promise<u32, ()>> =

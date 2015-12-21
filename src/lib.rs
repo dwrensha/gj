@@ -254,10 +254,12 @@ impl EventLoop {
                 Some(event_loop) => {
                     // If there is still an event other than the head event, then there must have
                     // been a memory leak.
-                    if event_loop.events.borrow().len() > 1 {
+                    let remaining_events = event_loop.events.borrow().len();
+                    if remaining_events > 1 {
                         ::std::mem::forget(event_loop); // Prevent double panic.
-                        panic!("Leaked events found when cleaning up event loop. \
-                               Perhaps there is a reference cycle containing promises?")
+                        panic!("{} leaked events found when cleaning up event loop. \
+                               Perhaps there is a reference cycle containing promises?",
+                               remaining_events - 1)
                     }
                 }
             }
@@ -407,7 +409,7 @@ impl <T, E> TaskSet <T, E> {
     }
 
     pub fn add(&mut self, promise: Promise<T, E>) {
-        private::TaskSetImpl::add(self.task_set_impl.clone(), promise.node);
+        private::TaskSetImpl::add(&self.task_set_impl, promise.node);
     }
 }
 

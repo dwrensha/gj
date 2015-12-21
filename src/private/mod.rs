@@ -266,17 +266,17 @@ impl <T, E> TaskSetImpl <T, E> {
                       tasks: HashMap::new() }
     }
 
-      pub fn add(task_set: Rc<RefCell<Self>>, mut node: Box<PromiseNode<T, E>>) {
+      pub fn add(task_set: &Rc<RefCell<Self>>, mut node: Box<PromiseNode<T, E>>) {
           let (handle, dropper) = EventHandle::new();
           node.on_ready(handle);
-          let task = Task { task_set: task_set.clone(), node: Some(node), event_handle: handle };
+          let task = Task { weak_task_set: Rc::downgrade(task_set), node: Some(node), event_handle: handle };
           handle.set(Box::new(task));
           task_set.borrow_mut().tasks.insert(handle, dropper);
     }
 }
 
 pub struct Task<T, E> where T: 'static, E: 'static {
-    task_set: Rc<RefCell<TaskSetImpl<T, E>>>,
+    weak_task_set: ::std::rc::Weak<RefCell<TaskSetImpl<T, E>>>,
     node: Option<Box<PromiseNode<T, E>>>,
     event_handle: EventHandle,
 }
@@ -289,17 +289,22 @@ impl <T, E> Event for Task<T, E> {
                 panic!()
             }
             Some(node) => {
-                match node.get() {
-                    Ok(v) => {
-                        self.task_set.borrow_mut().reaper.task_succeeded(v);
-                        match self.task_set.borrow_mut().tasks.remove(&self.event_handle) {
-                            None => None,
-                            Some(v) => Some(Box::new(v))
+                match self.weak_task_set.upgrade() {
+                    None => None,
+                    Some(task_set) => {
+                        match node.get() {
+                            Ok(v) => {
+                                task_set.borrow_mut().reaper.task_succeeded(v);
+                                match task_set.borrow_mut().tasks.remove(&self.event_handle) {
+                                    None => None,
+                                    Some(v) => Some(Box::new(v))
+                                }
+                            }
+                            Err(e) => {
+                                task_set.borrow_mut().reaper.task_failed(e);
+                                None
+                            }
                         }
-                    }
-                    Err(e) => {
-                        self.task_set.borrow_mut().reaper.task_failed(e);
-                        None
                     }
                 }
             }
