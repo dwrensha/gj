@@ -248,7 +248,19 @@ impl EventLoop {
         let result = main(&wait_scope);
 
         EVENT_LOOP.with(move |maybe_event_loop| {
-            *maybe_event_loop.borrow_mut() = None;
+            let el = ::std::mem::replace(&mut *maybe_event_loop.borrow_mut(), None);
+            match el {
+                None => unreachable!(),
+                Some(event_loop) => {
+                    // If there is still an event other than the head event, then there must have
+                    // been a memory leak.
+                    if event_loop.events.borrow().len() > 1 {
+                        ::std::mem::forget(event_loop); // Prevent double panic.
+                        panic!("Leaked events found when cleaning up event loop. \
+                               Perhaps there is a reference cycle containing promises?")
+                    }
+                }
+            }
         });
 
         return result;

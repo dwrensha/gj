@@ -41,8 +41,8 @@ impl ::std::cmp::PartialOrd for Handle {
 }
 
 pub struct HandleTable<T> {
-    slots : Vec<Option<T>>,
-
+    slots: Vec<Option<T>>,
+    num_active: usize,
     // prioritize lower values
     free_ids : BinaryHeap<Handle>,
 }
@@ -50,6 +50,7 @@ pub struct HandleTable<T> {
 impl <T> HandleTable<T> {
     pub fn new() -> HandleTable<T> {
         HandleTable { slots : Vec::new(),
+                      num_active: 0,
                       free_ids : BinaryHeap::new() }
     }
 
@@ -58,10 +59,12 @@ impl <T> HandleTable<T> {
         if !result.is_none() {
             self.free_ids.push(handle);
         }
+        self.num_active -= 1;
         return result;
     }
 
-    pub fn push(&mut self, val : T) -> Handle {
+    pub fn push(&mut self, val: T) -> Handle {
+        self.num_active += 1;
         match self.free_ids.pop() {
             Some(Handle { val: id }) => {
                 assert!(self.slots[id as usize].is_none());
@@ -73,6 +76,11 @@ impl <T> HandleTable<T> {
                 Handle { val: self.slots.len() - 1 }
             }
         }
+    }
+
+    // Returns the number of currently active handles in the table.
+    pub fn len(&self) -> usize {
+        self.num_active
     }
 }
 
