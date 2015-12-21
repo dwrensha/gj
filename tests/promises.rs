@@ -262,6 +262,15 @@ pub struct TaskReaperImpl {
     error_count: ::std::rc::Rc<::std::cell::Cell<u32>>,
 }
 
+impl TaskReaperImpl {
+    fn new() -> TaskReaperImpl {
+        TaskReaperImpl { error_count: ::std::rc::Rc::new(::std::cell::Cell::new(0)) }
+    }
+    fn get_error_count(&self) -> ::std::rc::Rc<::std::cell::Cell<u32>> {
+        self.error_count.clone()
+    }
+}
+
 impl gj::TaskReaper<(), Box<::std::error::Error>> for TaskReaperImpl {
     fn task_failed(&mut self, _error: Box<::std::error::Error>) {
         self.error_count.set(self.error_count.get() + 1);
@@ -271,8 +280,9 @@ impl gj::TaskReaper<(), Box<::std::error::Error>> for TaskReaperImpl {
 #[test]
 fn task_set() {
     gj::EventLoop::top_level(|wait_scope| {
-        let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
-        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl {error_count: error_count.clone()}));
+        let reaper = TaskReaperImpl::new();
+        let error_count = reaper.get_error_count();
+        let mut tasks = gj::TaskSet::new(Box::new(reaper));
         tasks.add(gj::Promise::fulfilled(()).map(|()| {
             Ok(())
         }));
@@ -301,8 +311,7 @@ fn task_set() {
 #[test]
 fn drop_task_set() {
     gj::EventLoop::top_level(|wait_scope| {
-        let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
-        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl {error_count: error_count}));
+        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
         let panicker = gj::Promise::fulfilled(()).map(|()| { unreachable!() });
         tasks.add(panicker);
         drop(tasks);
@@ -315,8 +324,7 @@ fn drop_task_set() {
 fn drop_task_set_leak() {
     // At one point, this causes a "leaked events" panic.
     gj::EventLoop::top_level(|_wait_scope| {
-        let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
-        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl {error_count: error_count}));
+        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
         tasks.add(gj::Promise::never_done());
         Ok(())
     }).unwrap();
