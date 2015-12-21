@@ -30,7 +30,7 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(R,W,B), gj::io::Error<
         Ok((src, buf, n)) => {
             if n == 0 {
                 // EOF
-                Ok(gj::Promise::fulfilled((src, dst, buf)))
+                Ok(gj::Promise::ok((src, dst, buf)))
             } else {
                 Ok(dst.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
                     Ok((dst, slice)) => Ok(forward(src, dst, slice.buf)),

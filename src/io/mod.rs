@@ -132,7 +132,7 @@ fn try_read_internal<R, T>(mut reader: R,
         match reader.read(&mut buf.as_mut()[already_read..]) {
             Ok(0) => {
                 // EOF
-                return Ok(Promise::fulfilled((reader, buf, already_read)));
+                return Ok(Promise::ok((reader, buf, already_read)));
             }
             Ok(n) => {
                 already_read += n;
@@ -155,7 +155,7 @@ fn try_read_internal<R, T>(mut reader: R,
         }
     }
 
-    Ok(Promise::fulfilled((reader, buf, already_read)))
+    Ok(Promise::ok((reader, buf, already_read)))
 }
 
 fn write_internal<W, T>(mut writer: W,
@@ -188,7 +188,7 @@ fn write_internal<W, T>(mut writer: W,
         }
     }
 
-    Ok(Promise::fulfilled((writer, buf)))
+    Ok(Promise::ok((writer, buf)))
 }
 
 struct FdObserver {
@@ -285,8 +285,8 @@ impl Timer {
         with_current_event_loop(move |event_loop| {
             let handle = match event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay) {
                 Ok(v) => v,
-                Err(_) => return Promise::rejected(::std::io::Error::new(::std::io::ErrorKind::Other,
-                                                                         "mio timer error"))
+                Err(_) => return Promise::err(::std::io::Error::new(::std::io::ErrorKind::Other,
+                                                                    "mio timer error"))
             };
             Promise {
                 node: Box::new(

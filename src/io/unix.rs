@@ -71,7 +71,7 @@ impl Listener {
                     Err(e) => return Err(Error::new(self, e)),
                     Ok(v) => v,
                 };
-                Ok(Promise::fulfilled((self, Stream::new(stream, handle))))
+                Ok(Promise::ok((self, Stream::new(stream, handle))))
             }
             None => {
                 with_current_event_loop(move |event_loop| {
@@ -87,7 +87,7 @@ impl Listener {
     }
 
     pub fn accept(self) -> Promise<(Listener, Stream), Error<Listener>> {
-        Promise::fulfilled(()).then(move |()| self.accept_internal())
+        Promise::ok(()).then(move |()| self.accept_internal())
     }
 }
 
@@ -125,7 +125,7 @@ impl Stream {
 
     pub fn connect<P: AsRef<::std::path::Path>>(addr: P) -> Promise<Stream, ::std::io::Error> {
         let connect_result = ::mio::unix::UnixStream::connect(&addr);
-        Promise::fulfilled(()).then(move |()| {
+        Promise::ok(()).then(move |()| {
             let stream = try!(connect_result);
 
             // TODO: if we're not already connected, maybe only register writable interest,
@@ -162,7 +162,7 @@ impl AsyncRead for Stream {
                    min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
         where T: AsMut<[u8]>
     {
-        Promise::fulfilled(()).then(move |()| {
+        Promise::ok(()).then(move |()| {
             try_read_internal(self, buf, 0, min_bytes)
         })
     }
@@ -170,7 +170,7 @@ impl AsyncRead for Stream {
 
 impl AsyncWrite for Stream {
     fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: AsRef<[u8]> {
-        Promise::fulfilled(()).then(move |()| {
+        Promise::ok(()).then(move |()| {
             write_internal(self, buf, 0)
         })
     }

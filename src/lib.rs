@@ -110,12 +110,12 @@ impl <T, E> Promise <T, E> {
     }
 
     /// Creates a new promise that has already been fulfilled.
-    pub fn fulfilled(value: T) -> Promise<T, E> {
+    pub fn ok(value: T) -> Promise<T, E> {
         Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) }
     }
 
     /// Creates a new promise that has already been rejected with the given error.
-    pub fn rejected(error: E) -> Promise<T, E> {
+    pub fn err(error: E) -> Promise<T, E> {
         Promise { node: Box::new(promise_node::Immediate::new(Err(error))) }
     }
 
@@ -133,7 +133,7 @@ impl <T, E> Promise <T, E> {
     // for awhile without consuming the result, but you want to make sure that the system actually
     // processes it.
     pub fn eagerly_evaluate(self) -> Promise<T, E> {
-        self.then(|v| { Ok(Promise::fulfilled(v)) })
+        self.then(|v| { Ok(Promise::ok(v)) })
     }
 
     /// Runs the event loop until the promise is fulfilled.

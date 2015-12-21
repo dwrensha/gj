@@ -44,10 +44,10 @@ impl BufferPool {
     /// already available. Fails if another task is already waiting for a buffer.
     pub fn pop(&mut self) -> gj::Promise<Vec<u8>, ()> {
         match self.buffers.pop() {
-            Some(buf) => gj::Promise::fulfilled(buf),
+            Some(buf) => gj::Promise::ok(buf),
             None => {
                 if self.waiting.is_some() {
-                    gj::Promise::rejected(())
+                    gj::Promise::err(())
                 } else {
                     let (promise, fulfiller) = gj::new_promise_and_fulfiller();
                     self.waiting = Some(fulfiller);
@@ -81,7 +81,7 @@ fn echo(stream: gj::io::tcp::Stream, buf: Vec<u8>)
     use gj::io::{AsyncRead, AsyncWrite};
     stream.try_read(buf, 1).then(move |(stream, buf, n)| {
         if n == 0 { // EOF
-            Ok(gj::Promise::fulfilled((stream, buf)))
+            Ok(gj::Promise::ok((stream, buf)))
         } else {
             Ok(stream.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
                 Err(gj::io::Error {state: (stream, slice), error}) =>
