@@ -300,6 +300,19 @@ fn task_set() {
 
 #[test]
 fn drop_task_set() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
+        let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl {error_count: error_count}));
+        let panicker = gj::Promise::fulfilled(()).map(|()| { unreachable!() });
+        tasks.add(panicker);
+        drop(tasks);
+        gj::Promise::<(), ()>::fulfilled(()).map(|()| { Ok(()) } ).wait(wait_scope).unwrap();
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn drop_task_set_leak() {
     // At one point, this causes a "leaked events" panic.
     gj::EventLoop::top_level(|_wait_scope| {
         let error_count = ::std::rc::Rc::new(::std::cell::Cell::new(0));
