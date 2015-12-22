@@ -30,11 +30,11 @@ fn hello() {
         let listener = gj::io::tcp::Listener::bind(addr).unwrap();
 
         let _write_promise = listener.accept().lift::<::std::io::Error>().then(move |(_, stream)| {
-            Ok(stream.write(vec![0,1,2,3,4,5]).lift())
+            stream.write(vec![0,1,2,3,4,5]).lift()
         });
 
         let read_promise = gj::io::tcp::Stream::connect(addr).lift::<::std::io::Error>().then(move |stream| {
-            Ok(stream.read(vec![0u8; 6], 6).lift())
+            stream.read(vec![0u8; 6], 6).lift()
         });
 
         let (_, buf, _) = read_promise.wait(wait_scope).unwrap();
@@ -54,19 +54,19 @@ fn echo() {
         let listener = gj::io::tcp::Listener::bind(addr).unwrap();
 
         let _server_promise = listener.accept().lift::<::std::io::Error>().then(move |(_, stream)| {
-            Ok(stream.read(vec![0u8; 6], 6).lift().then(move |(stream, mut v, _)| {
+            stream.read(vec![0u8; 6], 6).lift().then(move |(stream, mut v, _)| {
                 assert_eq!(&v[..], [7,6,5,4,3,2]);
                 for x in &mut v {
                     *x += 1;
                 }
-                Ok(stream.write(v).lift())
-            }))
+                stream.write(v).lift()
+            })
         });
 
         let client_promise = gj::io::tcp::Stream::connect(addr).lift::<::std::io::Error>().then(move |stream| {
-            Ok(stream.write(vec![7,6,5,4,3,2]).lift().then(move |(stream, v)| {
-                Ok(stream.read(v, 6).lift())
-            }))
+            stream.write(vec![7,6,5,4,3,2]).lift().then(move |(stream, v)| {
+                stream.read(v, 6).lift()
+            })
         });
 
         let (_, buf, _) = client_promise.wait(wait_scope).unwrap();

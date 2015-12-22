@@ -19,6 +19,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#[macro_use]
 extern crate gj;
 
 #[test]
@@ -100,9 +101,9 @@ fn chain() {
         let promise2: gj::Promise<i32, ()> = gj::Promise::ok(()).map(|()| { return Ok(321); });
 
         let promise3 = promise.then(move |i| {
-            return Ok(promise2.then(move |j| {
-                return Ok(gj::Promise::ok(i + j));
-            }));
+            promise2.then(move |j| {
+                gj::Promise::ok(i + j)
+            })
         });
 
         let value = promise3.wait(wait_scope).unwrap();
@@ -120,11 +121,11 @@ fn chain_error() {
             gj::Promise::ok(()).map(|()| { Ok("XXX321") });
 
         let promise3 = promise.then(move |istr| {
-            Ok(promise2.then(move |jstr| {
-                let i: i32 = try!(istr.parse());
-                let j: i32 = try!(jstr.parse());  // Should return an error.
-                Ok(gj::Promise::ok(i + j))
-            }))
+            promise2.then(move |jstr| {
+                let i: i32 = pry!(istr.parse());
+                let j: i32 = pry!(jstr.parse());  // Should return an error.
+                gj::Promise::ok(i + j)
+            })
         });
 
         assert!(promise3.wait(wait_scope).is_err());
@@ -140,7 +141,7 @@ fn deep_chain2() {
 
         for _ in 0..1000 {
             promise = gj::Promise::ok(()).then(|_| {
-                Ok(promise)
+                promise
             });
         }
 
@@ -200,7 +201,7 @@ fn ordering() {
                 *promise2.borrow_mut() = Some(promise.then(move |_| {
                     assert_eq!(counter1.get(), 1);
                     counter1.set(2);
-                    return Ok(gj::Promise::ok(()));
+                    gj::Promise::ok(())
                 }));
                 fulfiller.fulfill(());
             }
@@ -210,11 +211,11 @@ fn ordering() {
             *promise3.borrow_mut() = Some(gj::Promise::ok(()).then(move |_| {
                 assert_eq!(counter4.get(), 4); // XXX
                 counter4.set(5);
-                return Ok(gj::Promise::ok(()));
+                gj::Promise::ok(())
             }).map(move |_| {
                 assert_eq!(counter5.get(), 5);
                 counter5.set(6);
-                return Ok(());
+                Ok(())
             }));
 
             {
@@ -222,7 +223,7 @@ fn ordering() {
                 *promise4.borrow_mut() = Some(promise.then(move |_| {
                     assert_eq!(counter2.get(), 2);
                     counter2.set(3);
-                    return Ok(gj::Promise::ok(()));
+                    gj::Promise::ok(())
                 }));
                 fulfiller.fulfill(());
             }
@@ -230,16 +231,16 @@ fn ordering() {
             *promise5.borrow_mut() = Some(gj::Promise::ok(()).map(move |_| {
                 assert_eq!(counter6.get(), 6);
                 counter6.set(7);
-                return Ok(());
+                Ok(())
             }));
 
-            return Ok(gj::Promise::ok(()));
+            gj::Promise::ok(())
         }));
 
         *promises[0].borrow_mut() = Some(gj::Promise::ok(()).then(move |_| {
             assert_eq!(counter3.get(), 3);
             counter3.set(4);
-            return Ok(gj::Promise::ok(()));
+            gj::Promise::ok(())
         }));
 
         for p in promises.into_iter() {
@@ -293,7 +294,7 @@ fn task_set() {
             Ok(())
         }));
 
-        gj::Promise::ok(()).then(|()| -> Result<gj::Promise<(), ()>, ()> {
+        gj::Promise::ok(()).then(|()| -> gj::Promise<(), ()> {
             panic!("Promise without waiter shouldn't execute.");
         });
 
@@ -407,9 +408,9 @@ fn simple_recursion() {
     fn foo(n: u64) -> gj::Promise<(), ()> {
         gj::Promise::ok(()).then(move |()| {
             if n == 0 {
-                Ok(gj::Promise::ok(()))
+                gj::Promise::ok(())
             } else {
-                Ok(foo(n-1))
+                foo(n-1)
             }
         })
     }
@@ -429,10 +430,10 @@ fn task_set_recursion() {
                 (0, _) => panic!("this promise should have been cancelled"),
                 (1, Some(fulfiller)) => {
                     fulfiller.fulfill(());
-                    Ok(foo(n-1, None))
+                    foo(n-1, None)
                 }
                 (n, maybe_fulfiller) => {
-                    Ok(foo(n-1, maybe_fulfiller))
+                    foo(n-1, maybe_fulfiller)
                 }
             }
         })

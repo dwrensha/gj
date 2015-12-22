@@ -123,7 +123,7 @@ trait HasHandle {
 fn try_read_internal<R, T>(mut reader: R,
                            mut buf: T,
                            mut already_read: usize,
-                           min_bytes: usize) -> Result<Promise<(R, T, usize), Error<(R, T)>>, Error<(R, T)>>
+                           min_bytes: usize) -> Promise<(R, T, usize), Error<(R, T)>>
     where T: AsMut<[u8]>, R: ::std::io::Read + HasHandle
 {
     use std::io::Read;
@@ -132,35 +132,35 @@ fn try_read_internal<R, T>(mut reader: R,
         match reader.read(&mut buf.as_mut()[already_read..]) {
             Ok(0) => {
                 // EOF
-                return Ok(Promise::ok((reader, buf, already_read)));
+                return Promise::ok((reader, buf, already_read));
             }
             Ok(n) => {
                 already_read += n;
             }
             Err(e) => {
                 if e.kind() != ::std::io::ErrorKind::WouldBlock {
-                    return Err(Error::new((reader, buf), e))
+                    return Promise::err(Error::new((reader, buf), e))
                 } else {
                     return with_current_event_loop(move |event_loop| {
                         let promise =
                             event_loop.event_port.borrow_mut()
                             .handler.observers[reader.get_handle()].when_becomes_readable();
-                        Ok(promise.then_else(move |r| match r {
+                        promise.then_else(move |r| match r {
                             Ok(()) => try_read_internal(reader, buf, already_read, min_bytes),
-                            Err(e) => Err(Error::new((reader, buf), e))
-                        }))
+                            Err(e) => Promise::err(Error::new((reader, buf), e))
+                        })
                     });
                 }
             }
         }
     }
 
-    Ok(Promise::ok((reader, buf, already_read)))
+    Promise::ok((reader, buf, already_read))
 }
 
 fn write_internal<W, T>(mut writer: W,
                         buf: T,
-                        mut already_written: usize) -> Result<Promise<(W, T), Error<(W, T)>>, Error<(W, T)>>
+                        mut already_written: usize) -> Promise<(W, T), Error<(W, T)>>
     where T: AsRef<[u8]>, W: ::std::io::Write + HasHandle
 {
     use ::std::io::Write;
@@ -172,23 +172,23 @@ fn write_internal<W, T>(mut writer: W,
             }
             Err(e) => {
                 if e.kind() != ::std::io::ErrorKind::WouldBlock {
-                    return Err(Error::new((writer, buf), e))
+                    return Promise::err(Error::new((writer, buf), e))
                 } else {
                     return with_current_event_loop(move |event_loop| {
                         let promise =
                             event_loop.event_port.borrow_mut()
                             .handler.observers[writer.get_handle()].when_becomes_writable();
-                        Ok(promise.then_else(move |r| match r {
+                        promise.then_else(move |r| match r {
                             Ok(()) => write_internal(writer, buf, already_written),
-                            Err(e) => Err(Error::new((writer, buf), e))
-                        }))
+                            Err(e) => Promise::err(Error::new((writer, buf), e))
+                        })
                     });
                 }
             }
         }
     }
 
-    Ok(Promise::ok((writer, buf)))
+    Promise::ok((writer, buf))
 }
 
 struct FdObserver {

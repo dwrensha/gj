@@ -41,7 +41,7 @@ fn child_loop(delay: u32,
     ::std::thread::sleep_ms(delay);
 
     stream.write(buf).then(move |(stream, buf)| {
-        Ok(child_loop(delay, stream, buf))
+        child_loop(delay, stream, buf)
     })
 }
 
@@ -58,7 +58,7 @@ fn listen_to_child(id: &'static str,
                    buf: Vec<u8>) -> gj::Promise<(), gj::io::Error<(gj::io::unix::Stream, Vec<u8>)>> {
     stream.read(buf, 1).then(move |(stream, buf, _n)| {
         println!("heard back from {}", id);
-        Ok(listen_to_child(id, stream, buf))
+        listen_to_child(id, stream, buf)
     })
 }
 
@@ -67,7 +67,7 @@ fn parent_wait_loop() -> gj::Promise<(), ::std::io::Error> {
 
     // If we used ::std::thread::sleep_ms() here, we would block the main event loop.
     gj::io::Timer.after_delay_ms(3000).then(|()| {
-        Ok(parent_wait_loop())
+        parent_wait_loop()
     })
 }
 

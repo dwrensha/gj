@@ -60,27 +60,27 @@ impl Listener {
         })
     }
 
-    fn accept_internal(self) -> Result<Promise<(Listener, Stream), Error<Listener>>, Error<Listener>> {
+    fn accept_internal(self) -> Promise<(Listener, Stream), Error<Listener>> {
         let accept_result = match self.listener.accept() {
-            Err(e) => return Err(Error::new(self, e)),
+            Err(e) => return Promise::err(Error::new(self, e)),
             Ok(v) => v,
         };
         match accept_result {
             Some((stream, _)) => {
                 let handle = match register_new_handle(&stream) {
-                    Err(e) => return Err(Error::new(self, e)),
+                    Err(e) => return Promise::err(Error::new(self, e)),
                     Ok(v) => v,
                 };
-                Ok(Promise::ok((self, Stream::new(stream, handle))))
+                Promise::ok((self, Stream::new(stream, handle)))
             }
             None => {
                 with_current_event_loop(move |event_loop| {
                     let promise =
                         event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
-                    Ok(promise.then_else(move |r| match r {
+                    promise.then_else(move |r| match r {
                         Ok(()) => self.accept_internal(),
-                        Err(e) => Err(Error::new(self, e))
-                    }))
+                        Err(e) => Promise::err(Error::new(self, e))
+                    })
                 })
             }
         }
@@ -125,20 +125,20 @@ impl Stream {
 
     pub fn connect(addr: ::std::net::SocketAddr) -> Promise<Stream, ::std::io::Error> {
         Promise::ok(()).then(move |()| {
-            let stream = try!(::mio::tcp::TcpStream::connect(&addr));
+            let stream = pry!(::mio::tcp::TcpStream::connect(&addr));
 
             // TODO: if we're not already connected, maybe only register writable interest,
             // and then reregister with read/write interested once we successfully connect.
 
-            let handle = try!(register_new_handle(&stream));
+            let handle = pry!(register_new_handle(&stream));
 
             with_current_event_loop(move |event_loop| {
                 let promise =
                     event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
-                Ok(promise.map(move |()| {
+                promise.map(move |()| {
                     try!(stream.take_socket_error());
                     Ok(Stream::new(stream, handle))
-                }))
+                })
             })
         })
     }

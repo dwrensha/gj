@@ -33,6 +33,18 @@ use std::result::Result;
 use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub, PromiseAndFulfillerWrapper,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
 
+
+/// Like `try!()`, but for functions that return a `Promise<T, E>` rather than a `Result<T, E>`.
+#[macro_export]
+macro_rules! pry {
+    ($expr:expr) => (match $expr {
+        ::std::result::Result::Ok(val) => val,
+        ::std::result::Result::Err(err) => {
+            return $crate::Promise::err(::std::convert::From::from(err))
+        }
+    })
+}
+
 pub mod io;
 
 mod private;
@@ -55,20 +67,20 @@ impl <T, E> Promise <T, E> {
     /// `func` might be invoked is during the next `turn()` of the event loop.
     pub fn then_else<F, R, E1>(self, func: F) -> Promise<R, E1>
         where F: 'static,
-              F: FnOnce(Result<T, E>) -> Result<Promise<R, E1>, E1>,
+              F: FnOnce(Result<T, E>) -> Promise<R, E1>,
               R: 'static
     {
-        let intermediate = Box::new(promise_node::Transform::new(self.node, func));
+        let intermediate = Box::new(promise_node::Transform::new(self.node, |x| Ok(func(x)) ));
         Promise { node: Box::new(promise_node::Chain::new(intermediate)) }
     }
 
     /// Calls `then_else()` with a default error handler that simply propagates all errors.
     pub fn then<F, R>(self, func: F) -> Promise<R, E>
         where F: 'static,
-              F: FnOnce(T) -> Result<Promise<R, E>, E>,
+              F: FnOnce(T) -> Promise<R, E>,
               R: 'static,
     {
-        self.then_else(|r| { match r { Ok(v) => func(v), Err(e) => Err(e) } })
+        self.then_else(|r| { match r { Ok(v) => func(v), Err(e) => Promise::err(e) } })
     }
 
     /// Like then_else() but for a `func` that returns a direct value rather than a promise.
@@ -133,7 +145,7 @@ impl <T, E> Promise <T, E> {
     // for awhile without consuming the result, but you want to make sure that the system actually
     // processes it.
     pub fn eagerly_evaluate(self) -> Promise<T, E> {
-        self.then(|v| { Ok(Promise::ok(v)) })
+        self.then(|v| { Promise::ok(v) })
     }
 
     /// Runs the event loop until the promise is fulfilled.

@@ -19,6 +19,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#[macro_use]
 extern crate gj;
 use std::net::ToSocketAddrs;
 use gj::io::{AsyncRead, AsyncWrite};
@@ -30,17 +31,17 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(R,W,B), gj::io::Error<
         Ok((src, buf, n)) => {
             if n == 0 {
                 // EOF
-                Ok(gj::Promise::ok((src, dst, buf)))
+                gj::Promise::ok((src, dst, buf))
             } else {
-                Ok(dst.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
-                    Ok((dst, slice)) => Ok(forward(src, dst, slice.buf)),
+                dst.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
+                    Ok((dst, slice)) => forward(src, dst, slice.buf),
                     Err(gj::io::Error {state: (dst, slice), error}) =>
-                        Err(gj::io::Error::new((src, dst, slice.buf), error))
-                }))
+                        gj::Promise::err(gj::io::Error::new((src, dst, slice.buf), error))
+                })
             }
         }
         Err(gj::io::Error {state: (src, buf), error}) =>
-            Err(gj::io::Error::new((src, dst, buf), error)),
+            gj::Promise::err(gj::io::Error::new((src, dst, buf), error)),
     })
 }
 
@@ -50,20 +51,20 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
     receiver.accept().lift().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
-        Ok(gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::Stream::connect(outbound_addr))
+        gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::Stream::connect(outbound_addr))
            .then_else(move |r| match r {
                Ok(dst_stream) =>  {
-                   task_set.add(forward(try!(src_stream.try_clone()),
-                                        try!(dst_stream.try_clone()),
+                   task_set.add(forward(pry!(src_stream.try_clone()),
+                                        pry!(dst_stream.try_clone()),
                                         vec![0; 1024]).lift().map(|_| Ok(())));
                    task_set.add(forward(dst_stream, src_stream, vec![0; 1024]).lift().map(|_| Ok(())));
-                   Ok(accept_loop(receiver, outbound_addr, task_set))
+                   accept_loop(receiver, outbound_addr, task_set)
                }
                Err(e) => {
                    println!("failed to connect: {}", e);
-                   Err(e.into())
+                   gj::Promise::err(e.into())
                }
-           }))
+           })
     })
 }
 

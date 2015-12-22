@@ -81,13 +81,13 @@ fn echo(stream: gj::io::tcp::Stream, buf: Vec<u8>)
     use gj::io::{AsyncRead, AsyncWrite};
     stream.try_read(buf, 1).then(move |(stream, buf, n)| {
         if n == 0 { // EOF
-            Ok(gj::Promise::ok((stream, buf)))
+            gj::Promise::ok((stream, buf))
         } else {
-            Ok(stream.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
+            stream.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
                 Err(gj::io::Error {state: (stream, slice), error}) =>
-                    Err(gj::io::Error::new((stream, slice.buf), error)),
-                Ok((stream, slice)) => Ok(echo(stream, slice.buf)),
-            }))
+                    gj::Promise::err(gj::io::Error::new((stream, slice.buf), error)),
+                Ok((stream, slice)) => echo(stream, slice.buf),
+            })
         }
     })
 }
@@ -117,10 +117,10 @@ fn accept_loop(listener: gj::io::tcp::Listener,
     let buf_promise = buffer_pool.borrow_mut().pop().map_err(|()| {
         ::std::io::Error::new(::std::io::ErrorKind::Other, "No available buffers")});
     buf_promise.then(move |buf| {
-        Ok(listener.accept().lift().then(move |(listener, stream)| {
+        listener.accept().lift().then(move |(listener, stream)| {
             task_set.add(echo(stream, buf));
-            Ok(accept_loop(listener, task_set, buffer_pool))
-        }))
+            accept_loop(listener, task_set, buffer_pool)
+        })
     })
 }
 
