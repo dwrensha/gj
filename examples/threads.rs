@@ -31,21 +31,22 @@
 
 extern crate gj;
 use gj::io::{AsyncRead, AsyncWrite};
+use std::time::Duration;
 
-fn child_loop(delay: u32,
+fn child_loop(delay: Duration,
               stream: gj::io::unix::Stream,
               buf: Vec<u8>) -> gj::Promise<(), gj::io::Error<(gj::io::unix::Stream, Vec<u8>)>> {
 
     // This blocks the entire thread. This is okay because we are on a child thread
     // where nothing else needs to happen.
-    ::std::thread::sleep_ms(delay);
+    ::std::thread::sleep(delay);
 
     stream.write(buf).then(move |(stream, buf)| {
         child_loop(delay, stream, buf)
     })
 }
 
-fn child(delay: u32) -> Result<gj::io::unix::Stream, Box<::std::error::Error>> {
+fn child(delay: Duration) -> Result<gj::io::unix::Stream, Box<::std::error::Error>> {
     let (_, stream) = try!(gj::io::unix::spawn(move |parent_stream, wait_scope| {
         try!(child_loop(delay, parent_stream, vec![0u8]).lift::<Box<::std::error::Error>>().wait(wait_scope));
         Ok(())
@@ -76,9 +77,9 @@ pub fn main() {
 
         let children = vec![
             parent_wait_loop().lift::<Box<::std::error::Error>>(),
-            listen_to_child("CHILD 1", try!(child(700)), vec![0]).lift(),
-            listen_to_child("CHILD 2", try!(child(1900)), vec![0]).lift(),
-            listen_to_child("CHILD 3", try!(child(2600)), vec![0]).lift()];
+            listen_to_child("CHILD 1", try!(child(Duration::from_millis(700))), vec![0]).lift(),
+            listen_to_child("CHILD 2", try!(child(Duration::from_millis(1900))), vec![0]).lift(),
+            listen_to_child("CHILD 3", try!(child(Duration::from_millis(2600))), vec![0]).lift()];
 
         try!(gj::join_promises(children).wait(wait_scope));
 
