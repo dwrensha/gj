@@ -125,7 +125,7 @@ impl <T, E> Promise <T, E> {
     }
 
     /// Forks the promise, so that multiple different clients can independently wait on the result.
-    pub fn fork(self) -> ForkedPromise<T> where T: Clone {
+    pub fn fork(self) -> ForkedPromise<T, E> where T: Clone, E: Clone {
         ForkedPromise::new(self)
     }
 
@@ -167,18 +167,18 @@ impl <T, E> Promise <T, E> {
 pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
 /// The result of Promise::fork(). Allows branches to be created.
-pub struct ForkedPromise<T> where T: 'static + Clone {
-    hub: Rc<RefCell<promise_node::ForkHub<T>>>,
+pub struct ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
+    hub: Rc<RefCell<promise_node::ForkHub<T, E>>>,
 }
 
-impl <T> ForkedPromise<T> where T: 'static + Clone {
-    fn new<E>(inner: Promise<T, E>) -> ForkedPromise<T> {
+impl <T, E> ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
+    fn new(inner: Promise<T, E>) -> ForkedPromise<T, E> {
         ForkedPromise {
-            hub: Rc::new(RefCell::new(promise_node::ForkHub::new(inner.map_err(|_| () ).node))),
+            hub: Rc::new(RefCell::new(promise_node::ForkHub::new(inner.node))),
         }
     }
 
-    pub fn add_branch(&mut self) -> Promise<T, ()> {
+    pub fn add_branch(&mut self) -> Promise<T, E> {
         promise_node::ForkHub::add_branch(&self.hub)
     }
 }

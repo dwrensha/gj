@@ -393,23 +393,24 @@ impl <T, U, E> PromiseNode<T, E> for Wrapper<T, U, E> {
     }
 }
 
-enum ForkHubStage<T> {
-    Waiting(Box<PromiseNode<T, ()>>),
-    Done(Result<T, ()>),
+enum ForkHubStage<T, E> {
+    Uninitialized,
+    Waiting(Box<PromiseNode<T, E>>),
+    Done(Result<T, E>),
 }
 
-struct ForkHubState<T> {
+struct ForkHubState<T, E> {
     branches: Vec<::std::rc::Weak<RefCell<OnReadyEvent>>>,
-    stage: ForkHubStage<T>,
+    stage: ForkHubStage<T, E>,
 }
 
-pub struct ForkHub<T> where T: 'static + Clone {
-    state: Rc<RefCell<ForkHubState<T>>>,
+pub struct ForkHub<T, E> where T: 'static + Clone, E: 'static + Clone {
+    state: Rc<RefCell<ForkHubState<T, E>>>,
     dropper: EventDropper,
 }
 
-impl <T> ForkHub<T> where T: 'static + Clone {
-    pub fn new(mut inner: Box<PromiseNode<T, ()>>) -> ForkHub<T> {
+impl <T, E> ForkHub<T, E> where T: 'static + Clone, E: 'static + Clone {
+    pub fn new(mut inner: Box<PromiseNode<T, E>>) -> ForkHub<T, E> {
         // TODO(someday): KJ calls setSelfPointer() here.
         let (handle, dropper) = EventHandle::new();
         inner.on_ready(handle);
@@ -422,7 +423,7 @@ impl <T> ForkHub<T> where T: 'static + Clone {
         ForkHub { state: state, dropper: dropper }
     }
 
-    pub fn add_branch(hub: &Rc<RefCell<ForkHub<T>>>) -> Promise<T, ()> {
+    pub fn add_branch(hub: &Rc<RefCell<ForkHub<T, E>>>) -> Promise<T, E> {
         let on_ready_event = Rc::new(RefCell::new(OnReadyEvent::Empty));
         {
             let state = &mut hub.borrow_mut().state;
@@ -436,14 +437,15 @@ impl <T> ForkHub<T> where T: 'static + Clone {
     }
 }
 
-pub struct ForkEvent<T> where T: 'static + Clone {
-    state: Rc<RefCell<ForkHubState<T>>>,
+pub struct ForkEvent<T, E> where T: 'static + Clone, E: 'static + Clone {
+    state: Rc<RefCell<ForkHubState<T, E>>>,
 }
 
-impl <T> Event for ForkEvent<T> where T: Clone {
+impl <T, E> Event for ForkEvent<T, E> where T: 'static + Clone, E: 'static + Clone {
     fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
         // Dependency is ready.  Fetch its result and then delete the node.
-        let stage = ::std::mem::replace(&mut self.state.borrow_mut().stage, ForkHubStage::Done(Err(())));
+        let stage = ::std::mem::replace(&mut self.state.borrow_mut().stage,
+                                        ForkHubStage::Uninitialized);
         let result = match stage {
             ForkHubStage::Waiting(inner) => inner.get(),
             _ => unreachable!(),
@@ -462,25 +464,20 @@ impl <T> Event for ForkEvent<T> where T: Clone {
     }
 }
 
-pub struct ForkBranch <T> where T: 'static + Clone {
-    hub: Rc<RefCell<ForkHub<T>>>,
+pub struct ForkBranch <T, E> where T: 'static + Clone, E: 'static + Clone {
+    hub: Rc<RefCell<ForkHub<T, E>>>,
     on_ready_event: Rc<RefCell<OnReadyEvent>>,
 }
 
-
-impl <T> ForkBranch<T> where T: Clone {
-
-}
-
-impl <T> PromiseNode<T, ()> for ForkBranch<T> where T: Clone {
+impl <T, E> PromiseNode<T, E> for ForkBranch<T, E> where T: Clone, E: Clone {
     fn on_ready(&mut self, event: EventHandle) {
         self.on_ready_event.borrow_mut().init(event);
     }
-    fn get(self: Box<Self>) -> Result<T, ()> {
+    fn get(self: Box<Self>) -> Result<T, E> {
         let state = &self.hub.borrow().state;
         let result = match &state.borrow().stage {
             &ForkHubStage::Done(Ok(ref v)) => Ok(v.clone()),
-            &ForkHubStage::Done(Err(())) => Err(()),
+            &ForkHubStage::Done(Err(ref e)) => Err(e.clone()),
             _ => unreachable!(),
         };
         result
