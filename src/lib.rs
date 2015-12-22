@@ -35,6 +35,8 @@ use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub, PromiseAnd
 
 
 /// Like `try!()`, but for functions that return a `Promise<T, E>` rather than a `Result<T, E>`.
+///
+/// Unwraps a `Result<T, E>` and immediately returns with `Promise::err()` in the error case.
 #[macro_export]
 macro_rules! pry {
     ($expr:expr) => (match $expr {
