@@ -22,7 +22,7 @@
 #[macro_use]
 extern crate gj;
 
-use gj::Promise;
+use gj::{EventLoop, Promise};
 
 #[test]
 fn eval_void() {
@@ -31,8 +31,8 @@ fn eval_void() {
     gj::EventLoop::top_level(|wait_scope| {
         let done = Rc::new(Cell::new(false));
         let done1 = done.clone();
-        let promise: gj::Promise<(), ()> =
-            gj::Promise::ok(()).map(move |()| {
+        let promise: Promise<(), ()> =
+            Promise::ok(()).map(move |()| {
                 done1.clone().set(true);
                 Ok(())
             });
@@ -45,9 +45,9 @@ fn eval_void() {
 
 #[test]
 fn eval_int() {
-    gj::EventLoop::top_level(|wait_scope| {
-        let promise: gj::Promise<u64, ()> =
-            gj::Promise::ok(19u64).map(|x| {
+    EventLoop::top_level(|wait_scope| {
+        let promise: Promise<u64, ()> =
+            Promise::ok(19u64).map(|x| {
                 assert_eq!(x, 19);
                 Ok(x + 2)
             });
@@ -60,7 +60,7 @@ fn eval_int() {
 
 #[test]
 fn fulfiller() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let (promise, fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let p1 = promise.map(|x| {
             assert_eq!(x, 10);
@@ -76,7 +76,7 @@ fn fulfiller() {
 
 #[test]
 fn reject_fulfiller() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
         fulfiller.reject(());
         let value = promise.wait(wait_scope);
@@ -87,7 +87,7 @@ fn reject_fulfiller() {
 
 #[test]
 fn drop_fulfiller() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let (promise, _) = Promise::<(), ()>::and_fulfiller();
         let value = promise.wait(wait_scope);
         assert_eq!(value, Err(()));
@@ -97,14 +97,14 @@ fn drop_fulfiller() {
 
 #[test]
 fn chain() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
 
-        let promise: gj::Promise<i32, ()> = gj::Promise::ok(()).map(|()| { return Ok(123); });
-        let promise2: gj::Promise<i32, ()> = gj::Promise::ok(()).map(|()| { return Ok(321); });
+        let promise: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(123) });
+        let promise2: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(321) });
 
         let promise3 = promise.then(move |i| {
             promise2.then(move |j| {
-                gj::Promise::ok(i + j)
+                Promise::ok(i + j)
             })
         });
 
@@ -116,17 +116,17 @@ fn chain() {
 
 #[test]
 fn chain_error() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
 
-        let promise = gj::Promise::ok(()).map(|()| { Ok("123") });
-        let promise2: gj::Promise<&'static str, Box<::std::error::Error>> =
-            gj::Promise::ok(()).map(|()| { Ok("XXX321") });
+        let promise = Promise::ok(()).map(|()| { Ok("123") });
+        let promise2: Promise<&'static str, Box<::std::error::Error>> =
+            Promise::ok(()).map(|()| { Ok("XXX321") });
 
         let promise3 = promise.then(move |istr| {
             promise2.then(move |jstr| {
                 let i: i32 = pry!(istr.parse());
                 let j: i32 = pry!(jstr.parse());  // Should return an error.
-                gj::Promise::ok(i + j)
+                Promise::ok(i + j)
             })
         });
 
@@ -137,12 +137,12 @@ fn chain_error() {
 
 #[test]
 fn deep_chain2() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
 
-        let mut promise: gj::Promise<u32, ()> = gj::Promise::ok(4u32);
+        let mut promise: Promise<u32, ()> = Promise::ok(4u32);
 
         for _ in 0..1000 {
-            promise = gj::Promise::ok(()).then(|_| {
+            promise = Promise::ok(()).then(|_| {
                 promise
             });
         }
@@ -156,9 +156,8 @@ fn deep_chain2() {
 
 #[test]
 fn separate_fulfiller_chained() {
-    gj::EventLoop::top_level(|wait_scope| {
-
-        let (promise, fulfiller) = Promise::<gj::Promise<i32, ()>, ()>::and_fulfiller();
+    EventLoop::top_level(|wait_scope| {
+        let (promise, fulfiller) = Promise::<Promise<i32, ()>, ()>::and_fulfiller();
         let (inner_promise, inner_fulfiller) = Promise::<i32, ()>::and_fulfiller();
 
         fulfiller.fulfill(inner_promise);
@@ -176,14 +175,14 @@ fn ordering() {
     use std::rc::Rc;
     use std::cell::{Cell, RefCell};
 
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
 
         let counter = Rc::new(Cell::new(0u32));
         let (counter0, counter1, counter2, counter3, counter4, counter5, counter6) =
             (counter.clone(), counter.clone(), counter.clone(), counter.clone(), counter.clone(),
              counter.clone(), counter.clone());
 
-        let mut promises: Vec<Rc<RefCell<Option<gj::Promise<(), ()>>>>> = Vec::new();
+        let mut promises: Vec<Rc<RefCell<Option<Promise<(), ()>>>>> = Vec::new();
         for _ in 0..6 {
             promises.push(Rc::new(RefCell::new(None)));
         }
@@ -192,7 +191,7 @@ fn ordering() {
         let promise3 = promises[3].clone();
         let promise4 = promises[4].clone();
         let promise5 = promises[5].clone();
-        *promises[1].borrow_mut() = Some(gj::Promise::ok(()).then(move |_| {
+        *promises[1].borrow_mut() = Some(Promise::ok(()).then(move |_| {
             assert_eq!(counter0.get(), 0);
             counter0.set(1);
 
@@ -203,17 +202,17 @@ fn ordering() {
                 *promise2.borrow_mut() = Some(promise.then(move |_| {
                     assert_eq!(counter1.get(), 1);
                     counter1.set(2);
-                    gj::Promise::ok(())
+                    Promise::ok(())
                 }));
                 fulfiller.fulfill(());
             }
 
             // .map() is scheduled breadth-first if the promise has already resolved, but depth-first
             // if the promise resolves later.
-            *promise3.borrow_mut() = Some(gj::Promise::ok(()).then(move |_| {
+            *promise3.borrow_mut() = Some(Promise::ok(()).then(move |_| {
                 assert_eq!(counter4.get(), 4); // XXX
                 counter4.set(5);
-                gj::Promise::ok(())
+                Promise::ok(())
             }).map(move |_| {
                 assert_eq!(counter5.get(), 5);
                 counter5.set(6);
@@ -225,21 +224,21 @@ fn ordering() {
                 *promise4.borrow_mut() = Some(promise.then(move |_| {
                     assert_eq!(counter2.get(), 2);
                     counter2.set(3);
-                    gj::Promise::ok(())
+                    Promise::ok(())
                 }));
                 fulfiller.fulfill(());
             }
 
-            *promise5.borrow_mut() = Some(gj::Promise::ok(()).map(move |_| {
+            *promise5.borrow_mut() = Some(Promise::ok(()).map(move |_| {
                 assert_eq!(counter6.get(), 6);
                 counter6.set(7);
                 Ok(())
             }));
 
-            gj::Promise::ok(())
+            Promise::ok(())
         }));
 
-        *promises[0].borrow_mut() = Some(gj::Promise::ok(()).then(move |_| {
+        *promises[0].borrow_mut() = Some(Promise::ok(()).then(move |_| {
             assert_eq!(counter3.get(), 3);
             counter3.set(4);
             gj::Promise::ok(())
@@ -335,11 +334,11 @@ fn drop_task_set_leak() {
 
 #[test]
 fn array_join() {
-    gj::EventLoop::top_level(|wait_scope| {
-        let promises: Vec<gj::Promise<u32, ()>> =
-            vec![gj::Promise::ok(123),
-                 gj::Promise::ok(456),
-                 gj::Promise::ok(789)];
+    EventLoop::top_level(|wait_scope| {
+        let promises: Vec<Promise<u32, ()>> =
+            vec![Promise::ok(123),
+                 Promise::ok(456),
+                 Promise::ok(789)];
 
         let promise = Promise::all(promises.into_iter());
         let result = promise.wait(wait_scope).unwrap();
@@ -353,8 +352,52 @@ fn array_join() {
 }
 
 #[test]
+fn array_join_ordering() {
+    use std::rc::Rc;
+    use std::cell::Cell;
+    EventLoop::top_level(|wait_scope| {
+        let bad_thing_happened = Rc::new(Cell::new(false));
+
+        let (p1, _f1) = Promise::and_fulfiller();
+        let (p2, f2) = Promise::and_fulfiller();
+        let (p3, _f3) = Promise::and_fulfiller();
+
+        let bad_thing_happened1 = bad_thing_happened.clone();
+        let p1 = p1.map(move |()| {
+            bad_thing_happened1.set(true);
+            Ok(())
+        });
+
+        let bad_thing_happened2 = bad_thing_happened.clone();
+        let p2 = p2.map(move |()| {
+            bad_thing_happened2.set(true);
+            Ok(())
+        });
+
+        let bad_thing_happened3 = bad_thing_happened.clone();
+        let p3 = p3.map(move |()| {
+            bad_thing_happened3.set(true);
+            Ok(())
+        });
+
+        let promises: Vec<Promise<(), ()>> = vec![p1, p2, p3];
+
+        let promise = Promise::all(promises.into_iter());
+
+        f2.reject(());
+
+        // This doesn't work yet!
+        //assert_eq!(promise.wait(wait_scope), Err(()));
+        assert_eq!(bad_thing_happened.get(), false);
+
+        Ok(())
+    }).unwrap();
+}
+
+
+#[test]
 fn array_join_drop_then_fulfill() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let (p, fulfiller) = Promise::<(), ()>::and_fulfiller();
         let p1: Promise<(),()> = p.map(|()| { panic!("this should never execute.") });
         let promises = vec![p1];
@@ -363,7 +406,7 @@ fn array_join_drop_then_fulfill() {
         fulfiller.fulfill(());
 
         // Get the event loop turning.
-        let wait_promise: gj::Promise<(),()> = gj::Promise::ok(()).then(|()| Promise::ok(()));
+        let wait_promise: Promise<(),()> = Promise::ok(()).then(|()| Promise::ok(()));
         wait_promise.wait(wait_scope).unwrap();
 
         Ok(())
@@ -373,7 +416,7 @@ fn array_join_drop_then_fulfill() {
 #[test]
 fn exclusive_join() {
     gj::EventLoop::top_level(|wait_scope| {
-        let left = gj::Promise::ok(()).map(|()| {
+        let left = Promise::ok(()).map(|()| {
             return Ok(123);
         });
         let (right, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
