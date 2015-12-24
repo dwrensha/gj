@@ -30,6 +30,7 @@
 
 
 extern crate gj;
+use gj::Promise;
 use gj::io::{AsyncRead, AsyncWrite};
 use std::time::Duration;
 
@@ -63,7 +64,7 @@ fn listen_to_child(id: &'static str,
     })
 }
 
-fn parent_wait_loop() -> gj::Promise<(), ::std::io::Error> {
+fn parent_wait_loop() -> Promise<(), ::std::io::Error> {
     println!("parent wait loop...");
 
     // If we used ::std::thread::sleep_ms() here, we would block the main event loop.
@@ -81,7 +82,7 @@ pub fn main() {
             listen_to_child("CHILD 2", try!(child(Duration::from_millis(1900))), vec![0]).lift(),
             listen_to_child("CHILD 3", try!(child(Duration::from_millis(2600))), vec![0]).lift()];
 
-        try!(gj::join_promises(children).wait(wait_scope));
+        try!(Promise::all(children.into_iter()).wait(wait_scope));
 
         Ok(())
     }).unwrap();

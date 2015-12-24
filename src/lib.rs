@@ -148,6 +148,14 @@ impl <T, E> Promise <T, E> {
         (result_promise, PromiseFulfiller{ hub: result, done: false })
     }
 
+    /// Transforms a vector of promises into a promise for a vector.
+    pub fn all<I>(promises: I) -> Promise<Vec<T>, E>
+        where I: Iterator<Item=Promise<T, E>>
+    {
+        let nodes = promises.into_iter().map(|p| { p.node }).collect();
+        Promise { node: Box::new(private::promise_node::ArrayJoin::new(nodes)) }
+    }
+
     /// Forks the promise, so that multiple different clients can independently wait on the result.
     pub fn fork(self) -> ForkedPromise<T, E> where T: Clone, E: Clone {
         ForkedPromise::new(self)
@@ -430,11 +438,4 @@ impl <T, E> TaskSet <T, E> {
 pub trait TaskReaper<T, E> where T: 'static, E: 'static {
     fn task_succeeded(&mut self, _value: T) {}
     fn task_failed(&mut self, error: E);
-}
-
-/// Transforms a vector of promises into a promise for a vector.
-pub fn join_promises<T, E>(promises: Vec<Promise<T, E>>) -> Promise<Vec<T>, E>
-{
-    let nodes = promises.into_iter().map(|p| { p.node }).collect();
-    Promise { node: Box::new(private::promise_node::ArrayJoin::new(nodes)) }
 }

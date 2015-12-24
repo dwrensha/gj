@@ -341,7 +341,7 @@ fn array_join() {
                  gj::Promise::ok(456),
                  gj::Promise::ok(789)];
 
-        let promise = gj::join_promises(promises);
+        let promise = Promise::all(promises.into_iter());
         let result = promise.wait(wait_scope).unwrap();
 
         assert_eq!(result.len(), 3);
@@ -357,7 +357,7 @@ fn array_join_drop_then_fulfill() {
     gj::EventLoop::top_level(|_wait_scope| {
         let (p, fulfiller) = Promise::<(), ()>::and_fulfiller();
         let promises = vec![p];
-        let promise = gj::join_promises(promises);
+        let promise = Promise::all(promises.into_iter());
         drop(promise);
         fulfiller.fulfill(());
         Ok(())
