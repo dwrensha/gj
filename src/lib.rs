@@ -54,6 +54,7 @@ mod handle_table;
 
 /// A computation that might eventually resolve to a value of type `T` or to an error
 ///  of type `E`.
+#[must_use]
 pub struct Promise<T, E> where T: 'static, E: 'static {
     node: Box<PromiseNode<T, E>>,
 }

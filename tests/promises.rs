@@ -280,6 +280,7 @@ impl gj::TaskReaper<(), ()> for TaskReaperImpl {
 }
 
 #[test]
+#[allow(unused_must_use)]
 fn task_set() {
     gj::EventLoop::top_level(|wait_scope| {
         let reaper = TaskReaperImpl::new();
