@@ -235,13 +235,14 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
 }
 
 
-struct ArrayJoinBranch {
-    state: Rc<RefCell<ArrayJoinState>>
+struct ArrayJoinBranch<T,E> where T: 'static, E: 'static {
+    state: Weak<RefCell<ArrayJoinState<T,E>>>
 }
 
-impl Event for ArrayJoinBranch {
+impl <T,E> Event for ArrayJoinBranch<T,E> {
     fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
-        let state = &mut *self.state.borrow_mut();
+        let strong_state = self.state.upgrade().expect("dangling pointer?");
+        let state = &mut *strong_state.borrow_mut();
         state.count_left -= 1;
         if state.count_left == 0 {
             state.on_ready_event.arm();
@@ -250,29 +251,35 @@ impl Event for ArrayJoinBranch {
     }
 }
 
-struct ArrayJoinState {
+struct ArrayJoinState <T, E> where T: 'static, E: 'static {
     count_left: usize,
     on_ready_event: OnReadyEvent,
+    branches: Vec<(Box<PromiseNode<T, E>>, EventDropper)>,
 }
 
-pub struct ArrayJoin<T, E> {
-    state: Rc<RefCell<ArrayJoinState>>,
-    branches: Vec<(Box<PromiseNode<T, E>>, EventDropper)>,
+pub struct ArrayJoin<T, E> where T: 'static, E: 'static {
+    state: Rc<RefCell<ArrayJoinState<T, E>>>,
 }
 
 impl<T, E> ArrayJoin<T, E> {
     pub fn new(nodes: Vec<Box<PromiseNode<T, E>>>) -> ArrayJoin<T, E> {
-        let state = Rc::new(RefCell::new(ArrayJoinState { count_left: nodes.len(),
-                                                          on_ready_event: OnReadyEvent::Empty }));
+        let state = Rc::new(RefCell::new(ArrayJoinState {
+            count_left: nodes.len(),
+            on_ready_event: OnReadyEvent::Empty,
+            branches: Vec::new(),
+        }));
         let branches =
             nodes.into_iter()
             .map(|mut node| {
                 let (handle, dropper) = EventHandle::new();
                 node.on_ready(handle);
-                handle.set(Box::new(ArrayJoinBranch { state: state.clone()}));
+                handle.set(Box::new(ArrayJoinBranch {
+                    state: Rc::downgrade(&state),
+                }));
                 return (node, dropper);
             }).collect();
-        return ArrayJoin {state: state, branches: branches};
+        state.borrow_mut().branches = branches;
+        ArrayJoin {state: state}
     }
 }
 
@@ -282,7 +289,8 @@ impl <T, E> PromiseNode<Vec<T>, E> for ArrayJoin<T, E> {
     }
     fn get(self: Box<Self>) -> Result<Vec<T>, E> {
         let mut result = Vec::new();
-        for (dependency, _dropper) in self.branches {
+        let branches = ::std::mem::replace(&mut self.state.borrow_mut().branches, Vec::new());
+        for (dependency, _dropper) in branches {
             result.push(try!(dependency.get()));
         }
         return Ok(result);
