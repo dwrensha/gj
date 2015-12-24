@@ -354,12 +354,18 @@ fn array_join() {
 
 #[test]
 fn array_join_drop_then_fulfill() {
-    gj::EventLoop::top_level(|_wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| {
         let (p, fulfiller) = Promise::<(), ()>::and_fulfiller();
-        let promises = vec![p];
-        let promise = Promise::all(promises.into_iter());
+        let p1: Promise<(),()> = p.map(|()| { panic!("this should never execute.") });
+        let promises = vec![p1];
+        let promise = Promise::all(promises.into_iter()).eagerly_evaluate();
         drop(promise);
         fulfiller.fulfill(());
+
+        // Get the event loop turning.
+        let wait_promise: gj::Promise<(),()> = gj::Promise::ok(()).then(|()| Promise::ok(()));
+        wait_promise.wait(wait_scope).unwrap();
+
         Ok(())
     }).unwrap();
 }
