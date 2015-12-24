@@ -138,6 +138,16 @@ impl <T, E> Promise <T, E> {
         Promise { node: Box::new(promise_node::NeverDone::new()) }
     }
 
+    /// Creates a new promise/fulfiller pair.
+    pub fn and_fulfiller() -> (Promise<T, E>, PromiseFulfiller<T, E>)
+        where E: FulfillerDropped
+    {
+        let result = Rc::new(RefCell::new(PromiseAndFulfillerHub::new()));
+        let result_promise: Promise<T, E> =
+            Promise { node: Box::new(PromiseAndFulfillerWrapper::new(result.clone()))};
+        (result_promise, PromiseFulfiller{ hub: result, done: false })
+    }
+
     /// Forks the promise, so that multiple different clients can independently wait on the result.
     pub fn fork(self) -> ForkedPromise<T, E> where T: Clone, E: Clone {
         ForkedPromise::new(self)
@@ -398,18 +408,6 @@ impl FulfillerDropped for ::std::io::Error {
         ::std::io::Error::new(::std::io::ErrorKind::Other, "Promise fulfiller was dropped.")
     }
 }
-
-/// Creates a new promise/fulfiller pair.
-pub fn new_promise_and_fulfiller<T, E>() -> (Promise<T, E>, PromiseFulfiller<T, E>)
-    where T: 'static,
-          E: 'static + FulfillerDropped
-{
-    let result = Rc::new(RefCell::new(PromiseAndFulfillerHub::new()));
-    let result_promise: Promise<T, E> =
-        Promise { node: Box::new(PromiseAndFulfillerWrapper::new(result.clone()))};
-    (result_promise, PromiseFulfiller{ hub: result, done: false })
-}
-
 
 /// Holds a collection of `Promise<T, E>`s and ensures that each executes to completion.
 /// Destroying a TaskSet automatically cancels all of its unfinished promises.

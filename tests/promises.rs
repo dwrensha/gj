@@ -22,6 +22,8 @@
 #[macro_use]
 extern crate gj;
 
+use gj::Promise;
+
 #[test]
 fn eval_void() {
     use std::rc::Rc;
@@ -59,7 +61,7 @@ fn eval_int() {
 #[test]
 fn fulfiller() {
     gj::EventLoop::top_level(|wait_scope| {
-        let (promise, fulfiller) = gj::new_promise_and_fulfiller::<u32, ()>();
+        let (promise, fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let p1 = promise.map(|x| {
             assert_eq!(x, 10);
             return Ok(x + 1);
@@ -75,7 +77,7 @@ fn fulfiller() {
 #[test]
 fn reject_fulfiller() {
     gj::EventLoop::top_level(|wait_scope| {
-        let (promise, fulfiller) = gj::new_promise_and_fulfiller::<(), ()>();
+        let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
         fulfiller.reject(());
         let value = promise.wait(wait_scope);
         assert_eq!(value, Err(()));
@@ -86,7 +88,7 @@ fn reject_fulfiller() {
 #[test]
 fn drop_fulfiller() {
     gj::EventLoop::top_level(|wait_scope| {
-        let (promise, _) = gj::new_promise_and_fulfiller::<(), ()>();
+        let (promise, _) = Promise::<(), ()>::and_fulfiller();
         let value = promise.wait(wait_scope);
         assert_eq!(value, Err(()));
         Ok(())
@@ -156,8 +158,8 @@ fn deep_chain2() {
 fn separate_fulfiller_chained() {
     gj::EventLoop::top_level(|wait_scope| {
 
-        let (promise, fulfiller) = gj::new_promise_and_fulfiller::<gj::Promise<i32, ()>, ()>();
-        let (inner_promise, inner_fulfiller) = gj::new_promise_and_fulfiller::<i32, ()>();
+        let (promise, fulfiller) = Promise::<gj::Promise<i32, ()>, ()>::and_fulfiller();
+        let (inner_promise, inner_fulfiller) = Promise::<i32, ()>::and_fulfiller();
 
         fulfiller.fulfill(inner_promise);
         inner_fulfiller.fulfill(123);
@@ -197,7 +199,7 @@ fn ordering() {
             {
                 // Use a promise and fulfiller so that we can fulfill the promise after waiting on it in
                 // order to induce depth-first scheduling.
-                let (promise, fulfiller) = gj::new_promise_and_fulfiller::<(), ()>();
+                let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
                 *promise2.borrow_mut() = Some(promise.then(move |_| {
                     assert_eq!(counter1.get(), 1);
                     counter1.set(2);
@@ -219,7 +221,7 @@ fn ordering() {
             }));
 
             {
-                let (promise, fulfiller) = gj::new_promise_and_fulfiller::<(), ()>();
+                let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
                 *promise4.borrow_mut() = Some(promise.then(move |_| {
                     assert_eq!(counter2.get(), 2);
                     counter2.set(3);
@@ -353,7 +355,7 @@ fn array_join() {
 #[test]
 fn array_join_drop_then_fulfill() {
     gj::EventLoop::top_level(|_wait_scope| {
-        let (p, fulfiller) = gj::new_promise_and_fulfiller::<(), ()>();
+        let (p, fulfiller) = Promise::<(), ()>::and_fulfiller();
         let promises = vec![p];
         let promise = gj::join_promises(promises);
         drop(promise);
@@ -368,7 +370,7 @@ fn exclusive_join() {
         let left = gj::Promise::ok(()).map(|()| {
             return Ok(123);
         });
-        let (right, _fulfiller) = gj::new_promise_and_fulfiller::<u32, ()>();
+        let (right, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let result = left.exclusive_join(right).wait(wait_scope).unwrap();
 
         assert_eq!(result, 123);
@@ -376,7 +378,7 @@ fn exclusive_join() {
     }).unwrap();
 
     gj::EventLoop::top_level(|wait_scope| {
-        let (left, _fulfiller) = gj::new_promise_and_fulfiller::<u32, ()>();
+        let (left, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let right = gj::Promise::ok(()).map(|()| {
             return Ok(456);
         });
@@ -441,7 +443,7 @@ fn task_set_recursion() {
 
     gj::EventLoop::top_level(|wait_scope| {
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
-        let (promise, fulfiller) = gj::new_promise_and_fulfiller();
+        let (promise, fulfiller) = Promise::and_fulfiller();
         tasks.add(foo(2, Some(fulfiller)));
         promise.wait(wait_scope).unwrap();
         Ok(())

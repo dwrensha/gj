@@ -23,7 +23,7 @@
 
 use std::result::Result;
 use handle_table::{HandleTable, Handle};
-use {EventPort, Promise, PromiseFulfiller, new_promise_and_fulfiller};
+use {EventPort, Promise, PromiseFulfiller};
 use private::{with_current_event_loop};
 
 pub mod tcp;
@@ -207,13 +207,13 @@ impl FdObserver {
     }
 
     pub fn when_becomes_readable(&mut self) -> Promise<(), ::std::io::Error> {
-        let (promise, fulfiller) = new_promise_and_fulfiller();
+        let (promise, fulfiller) = Promise::and_fulfiller();
         self.read_fulfiller = Some(fulfiller);
         return promise;
     }
 
     pub fn when_becomes_writable(&mut self) -> Promise<(), ::std::io::Error> {
-        let (promise, fulfiller) = new_promise_and_fulfiller();
+        let (promise, fulfiller) = Promise::and_fulfiller();
         self.write_fulfiller = Some(fulfiller);
         return promise;
     }
@@ -280,7 +280,7 @@ pub struct Timer;
 
 impl Timer {
     pub fn after_delay_ms(&self, delay: u64) -> Promise<(), ::std::io::Error> {
-        let (promise, fulfiller) = new_promise_and_fulfiller();
+        let (promise, fulfiller) = Promise::and_fulfiller();
         let timeout = Timeout { fulfiller: fulfiller };
         with_current_event_loop(move |event_loop| {
             let handle = match event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay) {

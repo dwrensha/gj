@@ -26,13 +26,15 @@
 
 extern crate gj;
 
+use gj::io::{AsyncRead, AsyncWrite};
+use gj::{Promise, PromiseFulfiller};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 /// Container for buffers that are not currently being used on a connection.
 struct BufferPool {
     buffers: Vec<Vec<u8>>,
-    waiting: Option<gj::PromiseFulfiller<Vec<u8>, ()>>,
+    waiting: Option<PromiseFulfiller<Vec<u8>, ()>>,
 }
 
 impl BufferPool {
@@ -42,14 +44,14 @@ impl BufferPool {
 
     /// Retrieves a buffer from the pool, waiting until one is available if there are none
     /// already available. Fails if another task is already waiting for a buffer.
-    pub fn pop(&mut self) -> gj::Promise<Vec<u8>, ()> {
+    pub fn pop(&mut self) -> Promise<Vec<u8>, ()> {
         match self.buffers.pop() {
-            Some(buf) => gj::Promise::ok(buf),
+            Some(buf) => Promise::ok(buf),
             None => {
                 if self.waiting.is_some() {
-                    gj::Promise::err(())
+                    Promise::err(())
                 } else {
-                    let (promise, fulfiller) = gj::new_promise_and_fulfiller();
+                    let (promise, fulfiller) = Promise::and_fulfiller();
                     self.waiting = Some(fulfiller);
                     promise
                 }
@@ -76,16 +78,15 @@ type TaskState = (gj::io::tcp::Stream, Vec<u8>);
 /// GJ implements a tail-call optimization that shortens promise chains when possible, and therefore
 /// this loop can run indefinitely, consuming only a small, bounded amount of memory.
 fn echo(stream: gj::io::tcp::Stream, buf: Vec<u8>)
-        -> gj::Promise<TaskState, gj::io::Error<TaskState>>
+        -> Promise<TaskState, gj::io::Error<TaskState>>
 {
-    use gj::io::{AsyncRead, AsyncWrite};
     stream.try_read(buf, 1).then(move |(stream, buf, n)| {
         if n == 0 { // EOF
-            gj::Promise::ok((stream, buf))
+            Promise::ok((stream, buf))
         } else {
             stream.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
                 Err(gj::io::Error {state: (stream, slice), error}) =>
-                    gj::Promise::err(gj::io::Error::new((stream, slice.buf), error)),
+                    Promise::err(gj::io::Error::new((stream, slice.buf), error)),
                 Ok((stream, slice)) => echo(stream, slice.buf),
             })
         }
@@ -112,7 +113,7 @@ impl gj::TaskReaper<TaskState, gj::io::Error<TaskState>> for Reaper {
 fn accept_loop(listener: gj::io::tcp::Listener,
                mut task_set: gj::TaskSet<TaskState, gj::io::Error<TaskState>>,
                buffer_pool: Rc<RefCell<BufferPool>>)
-               -> gj::Promise<(), ::std::io::Error>
+               -> Promise<(), ::std::io::Error>
 {
     let buf_promise = buffer_pool.borrow_mut().pop().map_err(|()| {
         ::std::io::Error::new(::std::io::ErrorKind::Other, "No available buffers")});
