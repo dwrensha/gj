@@ -148,7 +148,8 @@ impl <T, E> Promise <T, E> {
         (result_promise, PromiseFulfiller{ hub: result, done: false })
     }
 
-    /// Transforms a vector of promises into a promise for a vector.
+    /// Transforms a collection of promises into a promise for a vector. If any of
+    /// the promises fails, immediately cancels the remaining promises.
     pub fn all<I>(promises: I) -> Promise<Vec<T>, E>
         where I: Iterator<Item=Promise<T, E>>
     {

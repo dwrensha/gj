@@ -236,6 +236,7 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
 
 
 struct ArrayJoinBranch<T,E> where T: 'static, E: 'static {
+    index: usize,
     state: Weak<RefCell<ArrayJoinState<T,E>>>
 }
 
@@ -243,18 +244,56 @@ impl <T,E> Event for ArrayJoinBranch<T,E> {
     fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
         let strong_state = self.state.upgrade().expect("dangling pointer?");
         let state = &mut *strong_state.borrow_mut();
-        state.count_left -= 1;
-        if state.count_left == 0 {
-            state.on_ready_event.arm();
+        let stage = ::std::mem::replace(&mut state.stage,
+                                        ArrayJoinStage::Uninit);
+        match stage {
+            ArrayJoinStage::Uninit => unreachable!(),
+            ArrayJoinStage::Cancelled(_) => unreachable!(),
+            ArrayJoinStage::Active(mut branches) => {
+                let branch_stage = ::std::mem::replace(&mut branches[self.index],
+                                                       ArrayBranchStage::Uninit);
+                match branch_stage {
+                    ArrayBranchStage::Uninit => unreachable!(),
+                    ArrayBranchStage::Done(_) => unreachable!(),
+                    ArrayBranchStage::Waiting(p, d) => {
+                        match p.get() {
+                            Ok(v) => {
+                                branches[self.index] = ArrayBranchStage::Done(v);
+                                state.count_left -= 1;
+                                if state.count_left == 0 {
+                                    state.on_ready_event.arm();
+                                }
+                                state.stage = ArrayJoinStage::Active(branches);
+                            }
+                            Err(e) => {
+                                state.stage = ArrayJoinStage::Cancelled(e);
+                                state.on_ready_event.arm();
+                            }
+                        }
+                        Some(Box::new(d))
+                    }
+                }
+            }
         }
-        return None;
     }
+}
+
+enum ArrayBranchStage<T, E> where T: 'static, E: 'static {
+    Uninit,
+    Waiting(Box<PromiseNode<T, E>>, EventDropper),
+    Done(T),
+}
+
+enum ArrayJoinStage<T, E> where T: 'static, E: 'static {
+    Uninit,
+    Active(Vec<ArrayBranchStage<T,E>>),
+    Cancelled(E),
 }
 
 struct ArrayJoinState <T, E> where T: 'static, E: 'static {
     count_left: usize,
     on_ready_event: OnReadyEvent,
-    branches: Vec<(Box<PromiseNode<T, E>>, EventDropper)>,
+    stage: ArrayJoinStage<T, E>
 }
 
 pub struct ArrayJoin<T, E> where T: 'static, E: 'static {
@@ -266,19 +305,22 @@ impl<T, E> ArrayJoin<T, E> {
         let state = Rc::new(RefCell::new(ArrayJoinState {
             count_left: nodes.len(),
             on_ready_event: OnReadyEvent::Empty,
-            branches: Vec::new(),
+            stage: ArrayJoinStage::Uninit,
         }));
+        let mut idx = 0;
         let branches =
             nodes.into_iter()
             .map(|mut node| {
                 let (handle, dropper) = EventHandle::new();
                 node.on_ready(handle);
                 handle.set(Box::new(ArrayJoinBranch {
+                    index: idx,
                     state: Rc::downgrade(&state),
                 }));
-                return (node, dropper);
+                idx += 1;
+                ArrayBranchStage::Waiting(node, dropper)
             }).collect();
-        state.borrow_mut().branches = branches;
+        state.borrow_mut().stage = ArrayJoinStage::Active(branches);
         ArrayJoin {state: state}
     }
 }
@@ -288,12 +330,26 @@ impl <T, E> PromiseNode<Vec<T>, E> for ArrayJoin<T, E> {
         self.state.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<Vec<T>, E> {
-        let mut result = Vec::new();
-        let branches = ::std::mem::replace(&mut self.state.borrow_mut().branches, Vec::new());
-        for (dependency, _dropper) in branches {
-            result.push(try!(dependency.get()));
+        let stage = ::std::mem::replace(&mut self.state.borrow_mut().stage,
+                                        ArrayJoinStage::Uninit);
+        match stage {
+            ArrayJoinStage::Uninit => { unreachable!() }
+            ArrayJoinStage::Cancelled(e) => {
+                Err(e)
+            }
+            ArrayJoinStage::Active(branches) => {
+                let mut result = Vec::new();
+                for branch in branches {
+                    match branch {
+                        ArrayBranchStage::Uninit | ArrayBranchStage::Waiting(..) => unreachable!(),
+                        ArrayBranchStage::Done(v) => {
+                            result.push(v)
+                        }
+                    }
+                }
+                Ok(result)
+            }
         }
-        return Ok(result);
     }
 }
 

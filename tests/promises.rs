@@ -333,7 +333,7 @@ fn drop_task_set_leak() {
 }
 
 #[test]
-fn array_join() {
+fn array_join_simple() {
     EventLoop::top_level(|wait_scope| {
         let promises: Vec<Promise<u32, ()>> =
             vec![Promise::ok(123),
@@ -386,8 +386,7 @@ fn array_join_ordering() {
 
         f2.reject(());
 
-        // This doesn't work yet!
-        //assert_eq!(promise.wait(wait_scope), Err(()));
+        assert_eq!(promise.wait(wait_scope), Err(()));
         assert_eq!(bad_thing_happened.get(), false);
 
         Ok(())
