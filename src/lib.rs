@@ -95,7 +95,7 @@ impl <T, E> Promise <T, E> {
         Promise { node: Box::new(promise_node::Transform::new(self.node, func)) }
     }
 
-    /// Calls `map_else()` with a default error handler that simple propagates all errors.
+    /// Calls `map_else()` with a default error handler that simply propagates all errors.
     pub fn map<F, R>(self, func: F) -> Promise<R, E>
         where F: 'static,
               F: FnOnce(T) -> Result<R, E>,
