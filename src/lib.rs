@@ -165,10 +165,7 @@ impl <T, E> Promise <T, E> {
 
     /// Holds onto `value` until the promise resolves, then drops `value`.
     pub fn attach<U>(self, value: U) -> Promise<T, E> where U: 'static {
-        self.map(move |result| {
-            drop(value);
-            Ok(result)
-        })
+        self.map_else(move |result| { drop(value); result })
     }
 
     // Forces eager evaluation of this promise.  Use this if you are going to hold on to the promise
