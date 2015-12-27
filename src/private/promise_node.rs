@@ -308,7 +308,7 @@ impl<T, E> ArrayJoin<T, E> {
             stage: ArrayJoinStage::Uninit,
         }));
         let mut idx = 0;
-        let branches =
+        let branches: Vec<ArrayBranchStage<T,E>> =
             nodes.into_iter()
             .map(|mut node| {
                 let (handle, dropper) = EventHandle::new();
@@ -320,6 +320,9 @@ impl<T, E> ArrayJoin<T, E> {
                 idx += 1;
                 ArrayBranchStage::Waiting(node, dropper)
             }).collect();
+        if branches.len() == 0 {
+            state.borrow_mut().on_ready_event.arm();
+        }
         state.borrow_mut().stage = ArrayJoinStage::Active(branches);
         ArrayJoin {state: state}
     }

@@ -127,6 +127,11 @@ impl Drop for EventDropper {
                         }
                         None => {}
                     }
+
+                    let insertion_point = event_loop.depth_first_insertion_point.get();
+                    if insertion_point.0 == self.event_handle.0 {
+                        event_loop.depth_first_insertion_point.set(event_node.prev.unwrap());
+                    }
                 }
             }
         });

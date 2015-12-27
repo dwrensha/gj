@@ -308,7 +308,6 @@ impl EventLoop {
     }
 
     fn arm_depth_first(&self, event_handle: private::EventHandle) {
-
         let insertion_node_next = self.events.borrow()[self.depth_first_insertion_point.get().0].next;
 
         match insertion_node_next {

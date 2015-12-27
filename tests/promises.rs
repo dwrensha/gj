@@ -259,7 +259,6 @@ fn ordering() {
     }).unwrap();
 }
 
-
 pub struct TaskReaperImpl {
     error_count: ::std::rc::Rc<::std::cell::Cell<u32>>,
 }
@@ -348,6 +347,17 @@ fn array_join_simple() {
         assert_eq!(result[0], 123);
         assert_eq!(result[1], 456);
         assert_eq!(result[2], 789);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn array_join_empty() {
+    EventLoop::top_level(|wait_scope| {
+        let promises: Vec<Promise<(), ()>> = Vec::new();
+        let promise = Promise::all(promises.into_iter());
+        let result = promise.wait(wait_scope).unwrap();
+        assert_eq!(result.len(), 0);
         Ok(())
     }).unwrap();
 }
