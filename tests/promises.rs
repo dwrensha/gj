@@ -259,6 +259,24 @@ fn ordering() {
     }).unwrap();
 }
 
+#[test]
+fn drop_depth_first_insertion_point() {
+    // At one point, this triggered an "invalid handle idx" panic.
+    EventLoop::top_level(|_wait_scope| {
+        let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
+        let promise = Promise::all(vec![promise].into_iter());
+        drop(fulfiller);
+        drop(promise);
+
+        let (promise1, fulfiller1) = Promise::<(), ()>::and_fulfiller();
+        let promise1 = Promise::all(vec![promise1].into_iter());
+        drop(fulfiller1);
+        drop(promise1);
+
+        Ok(())
+    }).unwrap();
+}
+
 pub struct TaskReaperImpl {
     error_count: ::std::rc::Rc<::std::cell::Cell<u32>>,
 }
@@ -324,7 +342,7 @@ fn drop_task_set() {
 
 #[test]
 fn drop_task_set_leak() {
-    // At one point, this causes a "leaked events" panic.
+    // At one point, this caused a "leaked events" panic.
     gj::EventLoop::top_level(|_wait_scope| {
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
         tasks.add(gj::Promise::never_done());
