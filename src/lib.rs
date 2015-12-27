@@ -163,6 +163,14 @@ impl <T, E> Promise <T, E> {
         ForkedPromise::new(self)
     }
 
+    // Holds onto `value` until the promise resolves, then drops `value`.
+    pub fn attach<U>(self, value: U) -> Promise<T, E> where U: 'static {
+        self.map(move |result| {
+            drop(value);
+            Ok(result)
+        })
+    }
+
     // Forces eager evaluation of this promise.  Use this if you are going to hold on to the promise
     // for a while without consuming the result, but you want to make sure that the system actually
     // processes it.
