@@ -163,7 +163,7 @@ impl <T, E> Promise <T, E> {
         ForkedPromise::new(self)
     }
 
-    // Holds onto `value` until the promise resolves, then drops `value`.
+    /// Holds onto `value` until the promise resolves, then drops `value`.
     pub fn attach<U>(self, value: U) -> Promise<T, E> where U: 'static {
         self.map(move |result| {
             drop(value);
