@@ -426,16 +426,16 @@ impl FulfillerDropped for ::std::io::Error {
 /// Holds a collection of `Promise<T, E>`s and ensures that each executes to completion.
 /// Destroying a TaskSet automatically cancels all of its unfinished promises.
 pub struct TaskSet<T, E> where T: 'static, E: 'static {
-    task_set_impl: Rc<RefCell<private::TaskSetImpl<T, E>>>,
+    task_set_impl: private::TaskSetImpl<T, E>,
 }
 
 impl <T, E> TaskSet <T, E> {
     pub fn new(reaper: Box<TaskReaper<T, E>>) -> TaskSet<T, E> {
-        TaskSet { task_set_impl : Rc::new(RefCell::new(private::TaskSetImpl::new(reaper))) }
+        TaskSet { task_set_impl: private::TaskSetImpl::new(reaper) }
     }
 
     pub fn add(&mut self, promise: Promise<T, E>) {
-        private::TaskSetImpl::add(&self.task_set_impl, promise.node);
+        self.task_set_impl.add(promise.node);
     }
 }
 

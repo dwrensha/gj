@@ -265,27 +265,35 @@ impl <T, E> PromiseNode<T, E> for PromiseAndFulfillerWrapper<T, E> {
 }
 
 pub struct TaskSetImpl<T, E> where T: 'static, E: 'static {
-    reaper: Box<TaskReaper<T, E>>,
-    tasks: HashMap<EventHandle, EventDropper>,
+    reaper: Rc<RefCell<Box<TaskReaper<T, E>>>>,
+    tasks: Rc<RefCell<HashMap<EventHandle, EventDropper>>>,
 }
 
 impl <T, E> TaskSetImpl <T, E> {
     pub fn new(reaper: Box<TaskReaper<T, E>>) -> TaskSetImpl<T, E> {
-        TaskSetImpl { reaper: reaper,
-                      tasks: HashMap::new() }
+        TaskSetImpl {
+            reaper: Rc::new(RefCell::new(reaper)),
+            tasks: Rc::new(RefCell::new(HashMap::new())),
+        }
     }
 
-      pub fn add(task_set: &Rc<RefCell<Self>>, mut node: Box<PromiseNode<T, E>>) {
+      pub fn add(&self, mut node: Box<PromiseNode<T, E>>) {
           let (handle, dropper) = EventHandle::new();
           node.on_ready(handle);
-          let task = Task { weak_task_set: Rc::downgrade(task_set), node: Some(node), event_handle: handle };
+          let task = Task {
+              weak_reaper: Rc::downgrade(&self.reaper),
+              weak_tasks: Rc::downgrade(&self.tasks),
+              node: Some(node),
+              event_handle: handle
+          };
           handle.set(Box::new(task));
-          task_set.borrow_mut().tasks.insert(handle, dropper);
+          self.tasks.borrow_mut().insert(handle, dropper);
     }
 }
 
 pub struct Task<T, E> where T: 'static, E: 'static {
-    weak_task_set: ::std::rc::Weak<RefCell<TaskSetImpl<T, E>>>,
+    weak_reaper: Weak<RefCell<Box<TaskReaper<T, E>>>>,
+    weak_tasks: Weak<RefCell<HashMap<EventHandle, EventDropper>>>,
     node: Option<Box<PromiseNode<T, E>>>,
     event_handle: EventHandle,
 }
@@ -295,28 +303,29 @@ impl <T, E> Event for Task<T, E> {
         let maybe_node = ::std::mem::replace(&mut self.node, None);
         match maybe_node {
             None => {
-                panic!()
+                unreachable!()
             }
             Some(node) => {
-                match self.weak_task_set.upgrade() {
-                    None => None,
-                    Some(task_set) => {
+                match self.weak_reaper.upgrade() {
+                    None => (),
+                    Some(reaper) => {
                         match node.get() {
                             Ok(v) => {
-                                task_set.borrow_mut().reaper.task_succeeded(v);
-                                match task_set.borrow_mut().tasks.remove(&self.event_handle) {
-                                    None => None,
-                                    Some(v) => Some(Box::new(v))
-                                }
+                                reaper.borrow_mut().task_succeeded(v);
                             }
                             Err(e) => {
-                                task_set.borrow_mut().reaper.task_failed(e);
-                                None
+                                reaper.borrow_mut().task_failed(e);
                             }
                         }
                     }
                 }
             }
+        }
+        let tasks = self.weak_tasks.upgrade().expect("dangling reference to tasks?");
+        let mut tmp = tasks.borrow_mut();
+        match tmp.remove(&self.event_handle) {
+            None => None,
+            Some(v) => Some(Box::new(v)),
         }
     }
 }
