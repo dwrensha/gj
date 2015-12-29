@@ -528,7 +528,7 @@ fn task_set_recursion() {
 }
 
 #[test]
-fn fork() {
+fn fork_simple() {
     gj::EventLoop::top_level(|wait_scope| {
         let promise: gj::Promise<i32, ()> = gj::Promise::ok(()).map(|()| { Ok(123) });
         let mut fork = promise.fork();
@@ -540,13 +540,47 @@ fn fork() {
             assert_eq!(123, i);
             Ok(789)
         });
+        let branch3 = fork.add_branch().map(|_| {
+            Ok(912)
+        });
         drop(fork);
+        drop(branch3);
 
         assert_eq!(456, branch1.wait(wait_scope).unwrap());
         assert_eq!(789, branch2.wait(wait_scope).unwrap());
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn fork_cancel() {
+    use ::std::rc::Rc;
+    use ::std::cell::Cell;
+
+    gj::EventLoop::top_level(|wait_scope| {
+        let bad_thing_happened = Rc::new(Cell::new(false));
+
+        let bad_thing_happened1 = bad_thing_happened.clone();
+        let promise: gj::Promise<(), ()> = gj::Promise::ok(()).map(move |()| {
+            bad_thing_happened1.set(true);
+            Ok(())
+        });
+        let mut fork = promise.fork();
+        let branch = fork.add_branch();
+        drop(fork);
+        drop(branch);
+
+        // There are no references left. The original promise should be cancelled.
+
+        // Get the event loop turning.
+        let wait_promise: Promise<(),()> = Promise::ok(()).then(|()| Promise::ok(()));
+        wait_promise.wait(wait_scope).unwrap();
+
+        assert_eq!(false, bad_thing_happened.get());
+        Ok(())
+    }).unwrap();
+}
+
 
 #[test]
 #[should_panic(expected = "Promise callback destroyed itself.")]

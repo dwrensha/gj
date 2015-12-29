@@ -205,7 +205,8 @@ impl <T, E> Promise <T, E> {
 /// of some event loop.
 pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
-/// The result of Promise::fork(). Allows branches to be created.
+/// The result of Promise::fork(). Allows branches to be created. Dropping the `ForkedPromise`
+/// along with any branches created through `add_branch()` will cancel the original promise.
 pub struct ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
     hub: Rc<RefCell<promise_node::ForkHub<T, E>>>,
 }
@@ -217,6 +218,7 @@ impl <T, E> ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
         }
     }
 
+    /// Creates a new promise that will resolve when the originally forked promise resolves.
     pub fn add_branch(&mut self) -> Promise<T, E> {
         promise_node::ForkHub::add_branch(&self.hub)
     }
