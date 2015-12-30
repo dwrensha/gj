@@ -301,16 +301,19 @@ pub struct ArrayJoin<T, E> where T: 'static, E: 'static {
 }
 
 impl<T, E> ArrayJoin<T, E> {
-    pub fn new(nodes: Vec<Box<PromiseNode<T, E>>>) -> ArrayJoin<T, E> {
+    pub fn new<I>(promises: I) -> ArrayJoin<T, E>
+        where I: Iterator<Item=Promise<T, E>>
+    {
         let state = Rc::new(RefCell::new(ArrayJoinState {
-            count_left: nodes.len(),
+            count_left: 0,
             on_ready_event: OnReadyEvent::Empty,
             stage: ArrayJoinStage::Uninit,
         }));
         let mut idx = 0;
         let branches: Vec<ArrayBranchStage<T,E>> =
-            nodes.into_iter()
-            .map(|mut node| {
+            promises.into_iter()
+            .map(|promise| {
+                let mut node = promise.node;
                 let (handle, dropper) = EventHandle::new();
                 node.on_ready(handle);
                 handle.set(Box::new(ArrayJoinBranch {
@@ -323,6 +326,7 @@ impl<T, E> ArrayJoin<T, E> {
         if branches.len() == 0 {
             state.borrow_mut().on_ready_event.arm();
         }
+        state.borrow_mut().count_left = branches.len();
         state.borrow_mut().stage = ArrayJoinStage::Active(branches);
         ArrayJoin {state: state}
     }

@@ -154,8 +154,7 @@ impl <T, E> Promise <T, E> {
     pub fn all<I>(promises: I) -> Promise<Vec<T>, E>
         where I: Iterator<Item=Promise<T, E>>
     {
-        let nodes = promises.into_iter().map(|p| { p.node }).collect();
-        Promise { node: Box::new(private::promise_node::ArrayJoin::new(nodes)) }
+        Promise { node: Box::new(private::promise_node::ArrayJoin::new(promises)) }
     }
 
     /// Forks the promise, so that multiple different clients can independently wait on the result.
