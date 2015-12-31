@@ -464,13 +464,13 @@ impl <T, U, E> PromiseNode<T, E> for Wrapper<T, U, E> {
     }
 }
 
-enum ForkHubStage<T, E> {
+enum ForkHubStage<T, E> where T: 'static + Clone, E: 'static + Clone {
     Uninitialized,
     Waiting(Box<PromiseNode<T, E>>),
     Done(Result<T, E>),
 }
 
-struct ForkHubState<T, E> {
+struct ForkHubState<T, E> where T: 'static + Clone, E: 'static + Clone {
     branches: Vec<::std::rc::Weak<RefCell<OnReadyEvent>>>,
     stage: ForkHubStage<T, E>,
 }
@@ -495,6 +495,20 @@ impl <T, E> ForkHub<T, E> where T: 'static + Clone, E: 'static + Clone {
     }
 
     pub fn add_branch(hub: &Rc<RefCell<ForkHub<T, E>>>) -> Promise<T, E> {
+        {
+            let ref state = &hub.borrow().state;
+            match &state.borrow().stage {
+                &ForkHubStage::Done(Ok(ref v)) => {
+                    return Promise::ok(v.clone());
+                }
+                &ForkHubStage::Done(Err(ref e)) => {
+                    return Promise::err(e.clone());
+                }
+                _ => {}
+            }
+            ()
+        }
+
         let on_ready_event = Rc::new(RefCell::new(OnReadyEvent::Empty));
         {
             let state = &mut hub.borrow_mut().state;

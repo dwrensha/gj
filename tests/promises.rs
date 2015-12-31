@@ -581,6 +581,23 @@ fn fork_cancel() {
     }).unwrap();
 }
 
+#[test]
+fn fork_branch_after_resolve() {
+    gj::EventLoop::top_level(|wait_scope| {
+        let promise: gj::Promise<(), ()> = gj::Promise::ok(()).then(move |()| {
+            Promise::ok(())
+        });
+        let mut fork = promise.fork();
+        let branch = fork.add_branch();
+
+        assert!(branch.wait(wait_scope).is_ok());
+
+        let branch1 = fork.add_branch();
+        assert!(branch1.wait(wait_scope).is_ok());
+
+        Ok(())
+    }).unwrap();
+}
 
 #[test]
 #[should_panic(expected = "Promise callback destroyed itself.")]
