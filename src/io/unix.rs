@@ -202,14 +202,7 @@ pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream)
     use std::os::unix::io::FromRawFd;
 
     let (fd0, fd1) =
-        // eh... the trait `std::error::Error` is not implemented for the type `nix::Error`
-        match socketpair(AddressFamily::Unix, SockType::Stream, 0, SOCK_NONBLOCK | SOCK_CLOEXEC) {
-            Ok(v) => v,
-            Err(_) => {
-                return Err(Box::new(::std::io::Error::new(::std::io::ErrorKind::Other,
-                                                          "failed to create socketpair")))
-            }
-        };
+        try!(socketpair(AddressFamily::Unix, SockType::Stream, 0, SOCK_NONBLOCK | SOCK_CLOEXEC));
 
     let socket_stream = try!(unsafe { Stream::from_raw_fd(fd0) });
 
