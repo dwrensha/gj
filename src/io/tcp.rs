@@ -20,6 +20,8 @@
 // THE SOFTWARE.
 
 use std::result::Result;
+use std::rc::Rc;
+use std::cell::RefCell;
 use handle_table::{Handle};
 use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
            FdObserver, HasHandle, register_new_handle,
@@ -149,6 +151,11 @@ impl Stream {
         Ok(Stream::new(stream, handle))
     }
 
+    pub fn split(self) -> (Reader, Writer) {
+        let inner = Rc::new(RefCell::new(self));
+        (Reader { stream: inner.clone() }, Writer { stream: inner })
+    }
+
     #[cfg(unix)]
     pub unsafe fn from_raw_fd(fd: ::std::os::unix::io::RawFd) -> Result<Stream, ::std::io::Error> {
         let stream = ::std::os::unix::io::FromRawFd::from_raw_fd(fd);
@@ -162,16 +169,57 @@ impl AsyncRead for Stream {
                min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
         where T: AsMut<[u8]>
     {
-        Promise::ok(()).then(move |()| {
-            try_read_internal(self, buf, 0, min_bytes)
-        })
+        try_read_internal(self, buf, 0, min_bytes)
     }
 }
 
 impl AsyncWrite for Stream {
     fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: AsRef<[u8]> {
-        Promise::ok(()).then(move |()| {
-            write_internal(self, buf, 0)
-        })
+        write_internal(self, buf, 0)
+    }
+}
+
+pub struct Reader {
+    stream: Rc<RefCell<Stream>>
+}
+
+impl ::std::io::Read for Reader {
+    fn read(&mut self, buf: &mut [u8]) -> ::std::io::Result<usize> {
+        use std::io::Read;
+        self.stream.borrow_mut().stream.read(buf)
+    }
+}
+
+impl HasHandle for Reader {
+    fn get_handle(&self) -> Handle { self.stream.borrow().handle }
+}
+
+impl AsyncRead for Reader {
+    fn try_read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
+        where T: AsMut<[u8]>
+    {
+        try_read_internal(self, buf, 0, min_bytes)
+    }
+}
+
+pub struct Writer {
+    stream: Rc<RefCell<Stream>>
+}
+
+impl ::std::io::Write for Writer {
+    fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
+        use std::io::Write;
+        self.stream.borrow_mut().stream.write(buf)
+    }
+    fn flush(&mut self) -> ::std::io::Result<()> { Ok(()) }
+}
+
+impl HasHandle for Writer {
+    fn get_handle(&self) -> Handle { self.stream.borrow().handle }
+}
+
+impl AsyncWrite for Writer {
+    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: AsRef<[u8]> {
+        write_internal(self, buf, 0)
     }
 }

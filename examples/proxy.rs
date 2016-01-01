@@ -54,10 +54,11 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
         gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::Stream::connect(outbound_addr))
            .then_else(move |r| match r {
                Ok(dst_stream) =>  {
-                   task_set.add(forward(pry!(src_stream.try_clone()),
-                                        pry!(dst_stream.try_clone()),
+                   let (src_reader, src_writer) = src_stream.split();
+                   let (dst_reader, dst_writer) = dst_stream.split();
+                   task_set.add(forward(src_reader, dst_writer,
                                         vec![0; 1024]).lift().map(|_| Ok(())));
-                   task_set.add(forward(dst_stream, src_stream, vec![0; 1024]).lift().map(|_| Ok(())));
+                   task_set.add(forward(dst_reader, src_writer, vec![0; 1024]).lift().map(|_| Ok(())));
                    accept_loop(receiver, outbound_addr, task_set)
                }
                Err(e) => {
