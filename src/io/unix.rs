@@ -144,6 +144,18 @@ impl Stream {
         })
     }
 
+    pub fn new_pair() -> Result<(Stream, Stream), ::std::io::Error> {
+        use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};
+        use std::os::unix::io::FromRawFd;
+
+        let (fd1, fd2) =
+            try!(socketpair(AddressFamily::Unix, SockType::Stream, 0, SOCK_NONBLOCK | SOCK_CLOEXEC)
+                 .map_err(|_| ::std::io::Error::new(::std::io::ErrorKind::Other,
+                                                    "failed to create socketpair")));
+
+        unsafe { Ok((try!(Stream::from_raw_fd(fd1)), try!(Stream::from_raw_fd(fd2)))) }
+    }
+
     pub fn try_clone(&self) -> Result<Stream, ::std::io::Error> {
         let stream = try!(self.stream.try_clone());
         let handle = try!(register_new_handle(&stream));
@@ -196,15 +208,11 @@ pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream)
             }
         };
 
-    let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd0) };
-    let handle = try!(register_new_handle(&io));
-    let socket_stream = Stream::new(io, handle);
+    let socket_stream = try!(unsafe { Stream::from_raw_fd(fd0) });
 
     let join_handle = ::std::thread::spawn(move || {
         let _result = EventLoop::top_level(move |wait_scope| {
-            let io = unsafe { ::mio::unix::UnixStream::from_raw_fd(fd1) };
-            let handle = try!(register_new_handle(&io));
-            let socket_stream = Stream::new(io, handle);
+            let socket_stream = try!(unsafe { Stream::from_raw_fd(fd1) });
             start_func(socket_stream, &wait_scope)
         });
     });
