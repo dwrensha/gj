@@ -123,7 +123,6 @@ impl Drop for EventDropper {
                     match event_node.prev {
                         Some(e) => {
                             event_loop.events.borrow_mut()[e.0].next = event_node.next;
-                            event_loop.tail.set(e);
                         }
                         None => {}
                     }
@@ -131,6 +130,11 @@ impl Drop for EventDropper {
                     let insertion_point = event_loop.depth_first_insertion_point.get();
                     if insertion_point.0 == self.event_handle.0 {
                         event_loop.depth_first_insertion_point.set(event_node.prev.unwrap());
+                    }
+
+                    let tail = event_loop.tail.get();
+                    if tail.0 == self.event_handle.0 {
+                        event_loop.tail.set(event_node.prev.unwrap());
                     }
                 }
             }
