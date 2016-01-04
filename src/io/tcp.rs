@@ -105,7 +105,10 @@ impl ::std::io::Write for Stream {
         use std::io::Write;
         self.stream.write(buf)
     }
-    fn flush(&mut self) -> ::std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> ::std::io::Result<()> {
+        use std::io::Write;
+        self.stream.flush()
+    }
 }
 
 impl HasHandle for Stream {
@@ -211,7 +214,10 @@ impl ::std::io::Write for Writer {
         use std::io::Write;
         self.stream.borrow_mut().stream.write(buf)
     }
-    fn flush(&mut self) -> ::std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> ::std::io::Result<()> {
+        use std::io::Write;
+        self.stream.borrow_mut().flush()
+    }
 }
 
 impl HasHandle for Writer {
