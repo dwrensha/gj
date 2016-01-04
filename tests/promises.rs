@@ -557,11 +557,11 @@ fn fork_cancel() {
     use ::std::rc::Rc;
     use ::std::cell::Cell;
 
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let bad_thing_happened = Rc::new(Cell::new(false));
 
         let bad_thing_happened1 = bad_thing_happened.clone();
-        let promise: gj::Promise<(), ()> = gj::Promise::ok(()).map(move |()| {
+        let promise: Promise<(), ()> = Promise::ok(()).map(move |()| {
             bad_thing_happened1.set(true);
             Ok(())
         });
@@ -584,7 +584,7 @@ fn fork_cancel() {
 #[test]
 fn fork_branch_after_resolve() {
     gj::EventLoop::top_level(|wait_scope| {
-        let promise: gj::Promise<(), ()> = gj::Promise::ok(()).then(move |()| {
+        let promise: Promise<(), ()> = Promise::ok(()).then(move |()| {
             Promise::ok(())
         });
         let mut fork = promise.fork();
@@ -605,11 +605,11 @@ fn fork_branch_after_resolve() {
 fn knotty() {
     use std::rc::Rc;
     use std::cell::RefCell;
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let maybe_promise = Rc::new(RefCell::new(None));
         let maybe_promise2 = maybe_promise.clone();
 
-        let knotted_promise: gj::Promise<(), ()> = gj::Promise::ok(()).map(move |()| {
+        let knotted_promise: Promise<(), ()> = Promise::ok(()).map(move |()| {
 
             // We will arrange for this to be the only remaining reference to knotted_promise.
             // AFter the callback runs, the promise will get dropped, triggering a panic.
@@ -622,7 +622,7 @@ fn knotty() {
         drop(maybe_promise);
 
         // Get the event loop turning.
-        let wait_promise: gj::Promise<(),()> = gj::Promise::ok(());
+        let wait_promise: Promise<(),()> = Promise::ok(());
         wait_promise.wait(wait_scope).unwrap();
         Ok(())
     }).unwrap()
@@ -637,15 +637,15 @@ fn eagerly_evaluate() {
     gj::EventLoop::top_level(|wait_scope| {
         let called: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let called1 = called.clone();
-        let mut promise: gj::Promise<(),()> = gj::Promise::ok(()).map(move |()| {
+        let mut promise: Promise<(),()> = Promise::ok(()).map(move |()| {
             called1.set(true);
             Ok(())
         });
-        gj::Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
         assert_eq!(false, called.get());
 
         promise = promise.eagerly_evaluate();
-        gj::Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
 
         assert_eq!(true, called.get());
         Ok(())
