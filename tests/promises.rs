@@ -277,6 +277,34 @@ fn drop_depth_first_insertion_point() {
     }).unwrap();
 }
 
+#[test]
+fn drop_tail() {
+    // At one point, this failed to terminate.
+    EventLoop::top_level(|wait_scope| {
+        let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
+
+        let mut fork = promise.fork();
+        let branch1 = fork.add_branch();
+        let branch2 = fork.add_branch();
+
+        let promise1 = Promise::<(),()>::ok(()).then(|()| {
+            Promise::ok(())
+        }).then(|()| {
+            Promise::ok(())
+        });
+
+        fulfiller.reject(());
+
+        drop(fork);
+        drop(branch1);
+        drop(branch2);
+
+        promise1.wait(wait_scope).unwrap();
+        Ok(())
+    }).unwrap();
+}
+
+
 pub struct TaskReaperImpl {
     error_count: ::std::rc::Rc<::std::cell::Cell<u32>>,
 }
