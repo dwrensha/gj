@@ -221,6 +221,7 @@ impl FdObserver {
     }
 }
 
+#[doc(hidden)]
 pub struct MioEventPort {
     handler: Handler,
     reactor: ::mio::EventLoop<Handler>,
