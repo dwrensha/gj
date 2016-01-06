@@ -86,7 +86,7 @@ mod private;
 mod handle_table;
 
 /// A computation that might eventually resolve to a value of type `T` or to an error
-///  of type `E`.
+///  of type `E`. Dropping the promise cancels the computation.
 #[must_use]
 pub struct Promise<T, E> where T: 'static, E: 'static {
     node: Box<PromiseNode<T, E>>,
@@ -147,7 +147,7 @@ impl <T, E> Promise <T, E> {
     /// expectation here is that `func` is just doing some transformation on the results, not
     /// scheduling any other actions, and therefore the system does not need to be proactive about
     /// evaluating it. This way, a chain of trivial `map()` transformations can be executed all at
-    /// once without repeated rescheduling through the event loop. Use the `eagerlyEvaluate()`
+    /// once without repeated rescheduling through the event loop. Use the `eagerly_evaluate()`
     /// method to suppress this behavior.
     pub fn map_else<F, T1, E1>(self, func: F) -> Promise<T1, E1>
         where F: 'static,
