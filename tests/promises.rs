@@ -28,7 +28,7 @@ use gj::{EventLoop, Promise};
 fn eval_void() {
     use std::rc::Rc;
     use std::cell::Cell;
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let done = Rc::new(Cell::new(false));
         let done1 = done.clone();
         let promise: Promise<(), ()> =
@@ -241,7 +241,7 @@ fn ordering() {
         *promises[0].borrow_mut() = Some(Promise::ok(()).then(move |_| {
             assert_eq!(counter3.get(), 3);
             counter3.set(4);
-            gj::Promise::ok(())
+            Promise::ok(())
         }));
 
         for p in promises.into_iter() {
@@ -327,21 +327,21 @@ impl gj::TaskReaper<(), ()> for TaskReaperImpl {
 #[test]
 #[allow(unused_must_use)]
 fn task_set() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let reaper = TaskReaperImpl::new();
         let error_count = reaper.get_error_count();
         let mut tasks = gj::TaskSet::new(Box::new(reaper));
-        tasks.add(gj::Promise::ok(()).map(|()| {
+        tasks.add(Promise::ok(()).map(|()| {
             Ok(())
         }));
-        tasks.add(gj::Promise::ok(()).map(|()| {
+        tasks.add(Promise::ok(()).map(|()| {
             Err(())
         }));
-        tasks.add(gj::Promise::ok(()).map(|()| {
+        tasks.add(Promise::ok(()).map(|()| {
             Ok(())
         }));
 
-        gj::Promise::ok(()).then(|()| -> gj::Promise<(), ()> {
+        gj::Promise::ok(()).then(|()| -> Promise<(), ()> {
             panic!("Promise without waiter shouldn't execute.");
         });
 
@@ -360,10 +360,10 @@ fn task_set() {
 fn drop_task_set() {
     gj::EventLoop::top_level(|wait_scope| {
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
-        let panicker = gj::Promise::ok(()).map(|()| { unreachable!() });
+        let panicker = Promise::ok(()).map(|()| { unreachable!() });
         tasks.add(panicker);
         drop(tasks);
-        gj::Promise::<(), ()>::ok(()).map(|()| { Ok(()) } ).wait(wait_scope).unwrap();
+        Promise::<(), ()>::ok(()).map(|()| { Ok(()) } ).wait(wait_scope).unwrap();
         Ok(())
     }).unwrap();
 }
@@ -371,9 +371,9 @@ fn drop_task_set() {
 #[test]
 fn drop_task_set_leak() {
     // At one point, this caused a "leaked events" panic.
-    gj::EventLoop::top_level(|_wait_scope| {
+    EventLoop::top_level(|_wait_scope| {
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
-        tasks.add(gj::Promise::never_done());
+        tasks.add(Promise::never_done());
         Ok(())
     }).unwrap();
 }
@@ -471,7 +471,7 @@ fn array_join_drop_then_fulfill() {
 
 #[test]
 fn exclusive_join() {
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let left = Promise::ok(()).map(|()| {
             return Ok(123);
         });
@@ -482,9 +482,9 @@ fn exclusive_join() {
         Ok(())
     }).unwrap();
 
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let (left, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
-        let right = gj::Promise::ok(()).map(|()| {
+        let right = Promise::ok(()).map(|()| {
             return Ok(456);
         });
 
@@ -494,11 +494,11 @@ fn exclusive_join() {
         Ok(())
     }).unwrap();
 
-    gj::EventLoop::top_level(|wait_scope| {
-        let left: gj::Promise<u32, ()> = gj::Promise::ok(()).map(|()| {
+    EventLoop::top_level(|wait_scope| {
+        let left: Promise<u32, ()> = Promise::ok(()).map(|()| {
             Ok(123)
         });
-        let right: gj::Promise<u32, ()> = gj::Promise::ok(()).map(|()| {
+        let right: Promise<u32, ()> = Promise::ok(()).map(|()| {
             Ok(456)
         }); // need to eagerly evaluate?
 
@@ -512,17 +512,17 @@ fn exclusive_join() {
 
 #[test]
 fn simple_recursion() {
-    fn foo(n: u64) -> gj::Promise<(), ()> {
-        gj::Promise::ok(()).then(move |()| {
+    fn foo(n: u64) -> Promise<(), ()> {
+        Promise::ok(()).then(move |()| {
             if n == 0 {
-                gj::Promise::ok(())
+                Promise::ok(())
             } else {
                 foo(n-1)
             }
         })
     }
 
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         Ok(foo(100000).wait(wait_scope).unwrap())
     }).unwrap();
 }
@@ -531,8 +531,8 @@ fn simple_recursion() {
 fn task_set_recursion() {
     // At one point, this causes a "leaked events" panic.
 
-    fn foo(n: u64, maybe_fulfiller: Option<gj::PromiseFulfiller<(),()>>) -> gj::Promise<(), ()> {
-        gj::Promise::ok(()).then(move |()| {
+    fn foo(n: u64, maybe_fulfiller: Option<gj::PromiseFulfiller<(),()>>) -> Promise<(), ()> {
+        Promise::ok(()).then(move |()| {
             match (n, maybe_fulfiller) {
                 (0, _) => panic!("this promise should have been cancelled"),
                 (1, Some(fulfiller)) => {
@@ -546,7 +546,7 @@ fn task_set_recursion() {
         })
     }
 
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
         let (promise, fulfiller) = Promise::and_fulfiller();
         tasks.add(foo(2, Some(fulfiller)));
@@ -557,8 +557,8 @@ fn task_set_recursion() {
 
 #[test]
 fn fork_simple() {
-    gj::EventLoop::top_level(|wait_scope| {
-        let promise: gj::Promise<i32, ()> = gj::Promise::ok(()).map(|()| { Ok(123) });
+    EventLoop::top_level(|wait_scope| {
+        let promise: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(123) });
         let mut fork = promise.fork();
         let branch1 = fork.add_branch().map(|i| {
             assert_eq!(123, i);
