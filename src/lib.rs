@@ -28,33 +28,24 @@
 //!
 //! ```
 //! use gj::{EventLoop, Promise};
-//! use gj::io::{AsyncRead, AsyncWrite, Error, Slice, unix};
-//!
-//! fn echo(stream: unix::Stream, buf: Vec<u8>) -> Promise<(), ::std::io::Error> {
-//!     stream.try_read(buf, 1).lift().then(move |(stream, buf, n)| {
-//!         if n == 0 { // EOF
-//!             Promise::ok(())
-//!         } else {
-//!             stream.write(Slice::new(buf, n)).lift().then(move |(stream, slice)| {
-//!                 echo(stream, slice.buf)
-//!             })
-//!         }
-//!     })
-//! }
-//!
 //! EventLoop::top_level(|wait_scope| {
-//!     let (stream1, stream2) = try!(unix::Stream::new_pair());
-//!     let promise1 = echo(stream1, vec![0; 5]);
-//!     let promise2 = stream2.write(b"hello world").lift().then(|(stream, _)| {
-//!         stream.read(vec![0; 11], 11).map(|(_, buf, _)| {
-//!             assert_eq!(buf, b"hello world");
-//!             Ok(())
-//!         }).lift()
+//!     let (promise1, fulfiller1) = Promise::<(),()>::and_fulfiller();
+//!     let (promise2, fulfiller2) = Promise::<(),()>::and_fulfiller();
+//!     let promise3 = promise2.then(|_| {
+//!         println!("world");
+//!         Promise::ok(())
 //!     });
-//!     Promise::all(vec![promise1, promise2].into_iter()).wait(wait_scope).unwrap();
+//!     let promise4 = promise1.then(move |_| {
+//!         println!("hello ");
+//!         fulfiller2.fulfill(());
+//!         Promise::ok(())
+//!     });
+//!     fulfiller1.fulfill(());
+//!     Promise::all(vec![promise3, promise4].into_iter()).wait(wait_scope).unwrap();
 //!     Ok(())
 //! }).unwrap();
 //! ```
+
 
 extern crate mio;
 extern crate nix;
