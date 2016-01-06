@@ -77,9 +77,7 @@ type TaskState = (tcp::Stream, Vec<u8>);
 /// of promises, such a function could potentially create an unbounded chain of promises. However,
 /// GJ implements a tail-call optimization that shortens promise chains when possible, and therefore
 /// this loop can run indefinitely, consuming only a small, bounded amount of memory.
-fn echo(stream: tcp::Stream, buf: Vec<u8>)
-        -> Promise<TaskState, gj::io::Error<TaskState>>
-{
+fn echo(stream: tcp::Stream, buf: Vec<u8>) -> Promise<TaskState, Error<TaskState>> {
     stream.try_read(buf, 1).then(move |(stream, buf, n)| {
         if n == 0 { // EOF
             Promise::ok((stream, buf))
@@ -115,8 +113,7 @@ fn accept_loop(listener: tcp::Listener,
                buffer_pool: Rc<RefCell<BufferPool>>)
                -> Promise<(), ::std::io::Error>
 {
-    let buf_promise = buffer_pool.borrow_mut().pop().map_err(|()| {
-        ::std::io::Error::new(::std::io::ErrorKind::Other, "No available buffers")});
+    let buf_promise = buffer_pool.borrow_mut().pop().map_err(|()| unreachable!());
     buf_promise.then(move |buf| {
         listener.accept().lift().then(move |(listener, stream)| {
             task_set.add(echo(stream, buf));

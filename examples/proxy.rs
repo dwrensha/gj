@@ -22,36 +22,39 @@
 #[macro_use]
 extern crate gj;
 use std::net::ToSocketAddrs;
-use gj::io::{AsyncRead, AsyncWrite};
+use gj::io::{AsyncRead, AsyncWrite, Error, tcp};
+use gj::{EventLoop, Promise};
 
-fn forward<R,W,B>(src: R, dst: W, buf: B) -> gj::Promise<(R,W,B), gj::io::Error<(R,W,B)>>
+fn forward<R,W,B>(src: R, dst: W, buf: B) -> Promise<(R,W,B), Error<(R,W,B)>>
     where R: AsyncRead, W: AsyncWrite, B: AsMut<[u8]> + AsRef<[u8]> + 'static
 {
     src.try_read(buf, 1).then_else(move |r| match r {
         Ok((src, buf, n)) => {
             if n == 0 {
                 // EOF
-                gj::Promise::ok((src, dst, buf))
+                Promise::ok((src, dst, buf))
             } else {
                 dst.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
                     Ok((dst, slice)) => forward(src, dst, slice.buf),
-                    Err(gj::io::Error {state: (dst, slice), error}) =>
-                        gj::Promise::err(gj::io::Error::new((src, dst, slice.buf), error))
+                    Err(Error {state: (dst, slice), error}) =>
+                        Promise::err(gj::io::Error::new((src, dst, slice.buf), error))
                 })
             }
         }
-        Err(gj::io::Error {state: (src, buf), error}) =>
-            gj::Promise::err(gj::io::Error::new((src, dst, buf), error)),
+        Err(Error {state: (src, buf), error}) =>
+            Promise::err(Error::new((src, dst, buf), error)),
     })
 }
 
-fn accept_loop(receiver: gj::io::tcp::Listener,
+fn accept_loop(receiver: tcp::Listener,
                outbound_addr: ::std::net::SocketAddr,
-               mut task_set: gj::TaskSet<(), ::std::io::Error>) -> gj::Promise<(), ::std::io::Error> {
+               mut task_set: gj::TaskSet<(), ::std::io::Error>)
+               -> Promise<(), ::std::io::Error>
+{
     receiver.accept().lift().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
-        gj::io::Timer.timeout_after_ms(3000, ::gj::io::tcp::Stream::connect(outbound_addr))
+        gj::io::Timer.timeout_after_ms(3000, tcp::Stream::connect(outbound_addr))
            .then_else(move |r| match r {
                Ok(dst_stream) =>  {
                    let (src_reader, src_writer) = src_stream.split();
@@ -63,7 +66,7 @@ fn accept_loop(receiver: gj::io::tcp::Listener,
                }
                Err(e) => {
                    println!("failed to connect: {}", e);
-                   gj::Promise::err(e.into())
+                   Promise::err(e.into())
                }
            })
     })
@@ -84,9 +87,9 @@ pub fn main() {
         return;
     }
 
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
-        let listener = try!(::gj::io::tcp::Listener::bind(addr));
+        let listener = try!(tcp::Listener::bind(addr));
 
         let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
         accept_loop(listener, outbound_addr,
