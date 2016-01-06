@@ -31,6 +31,8 @@ pub mod tcp;
 #[cfg(unix)]
 pub mod unix;
 
+/// A `::std::io::Error` that also carries along some state. Useful for tasks from which you want to
+/// return the state in both the error and the success cases, like `Promise<S, Error<S>>`.
 pub struct Error<S> {
     pub state: S,
     pub error: ::std::io::Error,

@@ -23,6 +23,38 @@
 //! heavily borrowing ideas from [KJ](https://capnproto.org/cxxrpc.html#kj-concurrency-framework).
 //! Allows for coordination of asynchronous tasks using [promises](struct.Promise.html) as
 //! a basic building block.
+//!
+//! # Example
+//!
+//! ```
+//! use gj::{EventLoop, Promise};
+//! use gj::io::{AsyncRead, AsyncWrite, Error, Slice, unix};
+//!
+//! fn echo(stream: unix::Stream, buf: Vec<u8>) -> Promise<(), ::std::io::Error> {
+//!     stream.try_read(buf, 1).lift().then(move |(stream, buf, n)| {
+//!         if n == 0 { // EOF
+//!             Promise::ok(())
+//!         } else {
+//!             stream.write(Slice::new(buf, n)).lift().then(move |(stream, slice)| {
+//!                 echo(stream, slice.buf)
+//!             })
+//!         }
+//!     })
+//! }
+//!
+//! EventLoop::top_level(|wait_scope| {
+//!     let (stream1, stream2) = try!(unix::Stream::new_pair());
+//!     let promise1 = echo(stream1, vec![0; 5]);
+//!     let promise2 = stream2.write(b"hello world").lift().then(|(stream, _)| {
+//!         stream.read(vec![0; 11], 11).map(|(_, buf, _)| {
+//!             assert_eq!(buf, b"hello world");
+//!             Ok(())
+//!         }).lift()
+//!     });
+//!     Promise::all(vec![promise1, promise2].into_iter()).wait(wait_scope).unwrap();
+//!     Ok(())
+//! }).unwrap();
+//! ```
 
 extern crate mio;
 extern crate nix;
@@ -34,7 +66,8 @@ use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub, PromiseAnd
               EVENT_LOOP, with_current_event_loop, PromiseNode};
 
 
-/// Like `try!()`, but for functions that return a `Promise<T, E>` rather than a `Result<T, E>`.
+/// Like `try!()`, but for functions that return a [`Promise<T, E>`](struct.Promise.html) rather
+/// than a `Result<T, E>`.
 ///
 /// Unwraps a `Result<T, E>` and immediately returns with `Promise::err()` in the error case.
 #[macro_export]
@@ -60,6 +93,31 @@ pub struct Promise<T, E> where T: 'static, E: 'static {
 }
 
 impl <T, E> Promise <T, E> {
+    /// Creates a new promise that has already been fulfilled with the given value.
+    pub fn ok(value: T) -> Promise<T, E> {
+        Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) }
+    }
+
+    /// Creates a new promise that has already been rejected with the given error.
+    pub fn err(error: E) -> Promise<T, E> {
+        Promise { node: Box::new(promise_node::Immediate::new(Err(error))) }
+    }
+
+    /// Creates a new promise that never gets fulfilled.
+    pub fn never_done() -> Promise<T, E> {
+        Promise { node: Box::new(promise_node::NeverDone::new()) }
+    }
+
+    /// Creates a new promise/fulfiller pair.
+    pub fn and_fulfiller() -> (Promise<T, E>, PromiseFulfiller<T, E>)
+        where E: FulfillerDropped
+    {
+        let result = Rc::new(RefCell::new(PromiseAndFulfillerHub::new()));
+        let result_promise: Promise<T, E> =
+            Promise { node: Box::new(PromiseAndFulfillerWrapper::new(result.clone()))};
+        (result_promise, PromiseFulfiller{ hub: result, done: false })
+    }
+
     /// Chains further computation to be executed once the promise resolves.
     /// When the promise is fulfilled or rejected, invokes `func` on its result.
     ///
@@ -68,30 +126,32 @@ impl <T, E> Promise <T, E> {
     ///
     /// Always returns immediately, even if the promise is already resolved. The earliest that
     /// `func` might be invoked is during the next `turn()` of the event loop.
-    pub fn then_else<F, R, E1>(self, func: F) -> Promise<R, E1>
+    pub fn then_else<F, T1, E1>(self, func: F) -> Promise<T1, E1>
         where F: 'static,
-              F: FnOnce(Result<T, E>) -> Promise<R, E1>,
-              R: 'static
+              F: FnOnce(Result<T, E>) -> Promise<T1, E1>,
     {
         let intermediate = Box::new(promise_node::Transform::new(self.node, |x| Ok(func(x)) ));
         Promise { node: Box::new(promise_node::Chain::new(intermediate)) }
     }
 
     /// Calls `then_else()` with a default error handler that simply propagates all errors.
-    pub fn then<F, R>(self, func: F) -> Promise<R, E>
+    pub fn then<F, T1>(self, func: F) -> Promise<T1, E>
         where F: 'static,
-              F: FnOnce(T) -> Promise<R, E>,
-              R: 'static,
+              F: FnOnce(T) -> Promise<T1, E>,
     {
         self.then_else(|r| { match r { Ok(v) => func(v), Err(e) => Promise::err(e) } })
     }
 
-    /// Like then_else() but for a `func` that returns a direct value rather than a promise.
-    pub fn map_else<F, R, E1>(self, func: F) -> Promise<R, E1>
+    /// Like `then_else()` but for a `func` that returns a direct value rather than a promise. As an
+    /// optimization, execution of `func` is delayed until its result is known to be needed. The
+    /// expectation here is that `func` is just doing some transformation on the results, not
+    /// scheduling any other actions, and therefore the system does not need to be proactive about
+    /// evaluating it. This way, a chain of trivial `map()` transformations can be executed all at
+    /// once without repeated rescheduling through the event loop. Use the `eagerlyEvaluate()`
+    /// method to suppress this behavior.
+    pub fn map_else<F, T1, E1>(self, func: F) -> Promise<T1, E1>
         where F: 'static,
-              F: FnOnce(Result<T, E>) -> Result<R, E1>,
-              R: 'static,
-              E1: 'static
+              F: FnOnce(Result<T, E>) -> Result<T1, E1>,
     {
         Promise { node: Box::new(promise_node::Transform::new(self.node, func)) }
     }
@@ -124,31 +184,6 @@ impl <T, E> Promise <T, E> {
         Promise { node: Box::new(private::promise_node::ExclusiveJoin::new(self.node, other.node)) }
     }
 
-    /// Creates a new promise that has already been fulfilled.
-    pub fn ok(value: T) -> Promise<T, E> {
-        Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) }
-    }
-
-    /// Creates a new promise that has already been rejected with the given error.
-    pub fn err(error: E) -> Promise<T, E> {
-        Promise { node: Box::new(promise_node::Immediate::new(Err(error))) }
-    }
-
-    /// Creates a new promise that never gets fulfilled.
-    pub fn never_done() -> Promise<T, E> {
-        Promise { node: Box::new(promise_node::NeverDone::new()) }
-    }
-
-    /// Creates a new promise/fulfiller pair.
-    pub fn and_fulfiller() -> (Promise<T, E>, PromiseFulfiller<T, E>)
-        where E: FulfillerDropped
-    {
-        let result = Rc::new(RefCell::new(PromiseAndFulfillerHub::new()));
-        let result_promise: Promise<T, E> =
-            Promise { node: Box::new(PromiseAndFulfillerWrapper::new(result.clone()))};
-        (result_promise, PromiseFulfiller{ hub: result, done: false })
-    }
-
     /// Transforms a collection of promises into a promise for a vector. If any of
     /// the promises fails, immediately cancels the remaining promises.
     pub fn all<I>(promises: I) -> Promise<Vec<T>, E>
@@ -167,9 +202,9 @@ impl <T, E> Promise <T, E> {
         self.map_else(move |result| { drop(value); result })
     }
 
-    // Forces eager evaluation of this promise.  Use this if you are going to hold on to the promise
-    // for a while without consuming the result, but you want to make sure that the system actually
-    // processes it.
+    /// Forces eager evaluation of this promise.  Use this if you are going to hold on to the promise
+    /// for a while without consuming the result, but you want to make sure that the system actually
+    /// processes it.
     pub fn eagerly_evaluate(self) -> Promise<T, E> {
         self.then(|v| { Promise::ok(v) })
     }
@@ -201,11 +236,11 @@ impl <T, E> Promise <T, E> {
 }
 
 /// A scope in which asynchronous programming can occur. Corresponds to the top level scope
-/// of some event loop.
+/// of some [event loop](struct.EventLoop.html).
 pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
-/// The result of Promise::fork(). Allows branches to be created. Dropping the `ForkedPromise`
-/// along with any branches created through `add_branch()` will cancel the original promise.
+/// The result of `Promise::fork()`. Allows branches to be created. Dropping the `ForkedPromise`
+/// along with any branches created through `add_branch()` will cancel the computation.
 pub struct ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
     hub: Rc<RefCell<promise_node::ForkHub<T, E>>>,
 }
@@ -382,13 +417,17 @@ impl EventLoop {
     }
 }
 
-/// Specifies an error to generate when a PromiseFulfiller is dropped.
+/// Specifies an error to generate when a [`PromiseFulfiller`](struct.PromiseFulfiller.html) is
+/// dropped.
 pub trait FulfillerDropped {
     fn fulfiller_dropped() -> Self;
 }
 
 /// A handle that can be used to fulfill or reject a promise. If you think of a promise
 /// as the receiving end of a oneshot channel, then this is the sending end.
+///
+/// When a `PromiseFulfiller<T,E>` is dropped without receiving a `fulfill()` or `reject()` call,
+/// its promise is rejected with the error value `E::fulfiller_dropped()`.
 pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>,
     done: bool,
@@ -425,7 +464,7 @@ impl FulfillerDropped for ::std::io::Error {
 }
 
 /// Holds a collection of `Promise<T, E>`s and ensures that each executes to completion.
-/// Destroying a TaskSet automatically cancels all of its unfinished promises.
+/// Destroying a `TaskSet` automatically cancels all of its unfinished promises.
 pub struct TaskSet<T, E> where T: 'static, E: 'static {
     task_set_impl: private::TaskSetImpl<T, E>,
 }
@@ -440,8 +479,8 @@ impl <T, E> TaskSet <T, E> {
     }
 }
 
-/// Callbacks to be invoked when a task in a `TaskSet` finishes. You are required to
-/// implement at least the failure case.
+/// Callbacks to be invoked when a task in a [`TaskSet`](struct.TaskSet.html) finishes. You are
+/// required to implement at least the failure case.
 pub trait TaskReaper<T, E> where T: 'static, E: 'static {
     fn task_succeeded(&mut self, _value: T) {}
     fn task_failed(&mut self, error: E);

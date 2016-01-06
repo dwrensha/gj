@@ -19,6 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//! TCP sockets.
+
 use std::result::Result;
 use std::rc::Rc;
 use std::cell::RefCell;
