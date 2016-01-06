@@ -25,7 +25,7 @@
 //!
 //! ```
 //! use gj::{EventLoop, Promise};
-//! use gj::io::{AsyncRead, AsyncWrite, Error, Slice, unix};
+//! use gj::io::{AsyncRead, AsyncWrite, Slice, unix};
 //!
 //! fn echo(stream: unix::Stream, buf: Vec<u8>) -> Promise<(), ::std::io::Error> {
 //!     stream.try_read(buf, 1).lift().then(move |(stream, buf, n)| {
