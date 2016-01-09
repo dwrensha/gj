@@ -174,7 +174,10 @@ impl Stream {
         (Reader { stream: inner.clone() }, Writer { stream: inner })
     }
 
+    /// Consumes a raw file descriptor to creates a `Stream`. Ensures that O_NONBLOCK is set on the
+    /// descriptor.
     pub unsafe fn from_raw_fd(fd: ::std::os::unix::io::RawFd) -> Result<Stream, ::std::io::Error> {
+        try!(::nix::fcntl::fcntl(fd, ::nix::fcntl::FcntlArg::F_SETFL(::nix::fcntl::O_NONBLOCK)));
         let stream = ::std::os::unix::io::FromRawFd::from_raw_fd(fd);
         let handle = try!(register_new_handle(&stream));
         Ok(Stream::new(stream, handle))
