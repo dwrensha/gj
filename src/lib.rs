@@ -60,7 +60,8 @@ use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub, PromiseAnd
 /// Like `try!()`, but for functions that return a [`Promise<T, E>`](struct.Promise.html) rather
 /// than a `Result<T, E>`.
 ///
-/// Unwraps a `Result<T, E>` and immediately returns with `Promise::err()` in the error case.
+/// Unwraps a `Result<T, E>`. In the case of an error `Err(e)`, immediately returns from the
+/// enclosing function with `Promise::err(e)`.
 #[macro_export]
 macro_rules! pry {
     ($expr:expr) => (match $expr {
