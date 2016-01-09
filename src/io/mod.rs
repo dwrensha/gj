@@ -315,11 +315,12 @@ impl EventPort for MioEventPort {
 pub struct Timer;
 
 impl Timer {
-    pub fn after_delay_ms(&self, delay: u64) -> Promise<(), ::std::io::Error> {
+    pub fn after_delay(&self, delay: ::std::time::Duration) -> Promise<(), ::std::io::Error> {
+        let delay_ms = (delay.as_secs() * 1000) + (delay.subsec_nanos() as u64 / 1_000_000);
         let (promise, fulfiller) = Promise::and_fulfiller();
         let timeout = Timeout { fulfiller: fulfiller };
         with_current_event_loop(move |event_loop| {
-            let handle = match event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay) {
+            let handle = match event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay_ms) {
                 Ok(v) => v,
                 Err(_) => return Promise::err(::std::io::Error::new(::std::io::ErrorKind::Other,
                                                                     "mio timer error"))
@@ -331,10 +332,10 @@ impl Timer {
         })
     }
 
-    pub fn timeout_after_ms<T>(&self, delay: u64,
-                               promise: Promise<T, ::std::io::Error>) -> Promise<T, ::std::io::Error>
+    pub fn timeout_after<T>(&self, delay: ::std::time::Duration,
+                            promise: Promise<T, ::std::io::Error>) -> Promise<T, ::std::io::Error>
     {
-        promise.exclusive_join(self.after_delay_ms(delay).map(|()| {
+        promise.exclusive_join(self.after_delay(delay).map(|()| {
             Err(::std::io::Error::new(::std::io::ErrorKind::Other, "operation timed out"))
         }))
     }

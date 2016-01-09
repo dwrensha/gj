@@ -67,8 +67,8 @@ fn listen_to_child(id: &'static str,
 fn parent_wait_loop() -> Promise<(), ::std::io::Error> {
     println!("parent wait loop...");
 
-    // If we used ::std::thread::sleep_ms() here, we would block the main event loop.
-    gj::io::Timer.after_delay_ms(3000).then(|()| {
+    // If we used ::std::thread::sleep() here, we would block the main event loop.
+    gj::io::Timer.after_delay(Duration::from_millis(3000)).then(|()| {
         parent_wait_loop()
     })
 }

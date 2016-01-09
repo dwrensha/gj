@@ -54,7 +54,8 @@ fn accept_loop(receiver: tcp::Listener,
     receiver.accept().lift().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
-        gj::io::Timer.timeout_after_ms(3000, tcp::Stream::connect(outbound_addr))
+        gj::io::Timer.timeout_after(::std::time::Duration::from_secs(3),
+                                    tcp::Stream::connect(outbound_addr))
            .then_else(move |r| match r {
                Ok(dst_stream) =>  {
                    let (src_reader, src_writer) = src_stream.split();
