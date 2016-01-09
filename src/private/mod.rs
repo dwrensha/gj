@@ -34,9 +34,9 @@ pub fn with_current_event_loop<F, R>(f: F) -> R
     where F: FnOnce(&EventLoop) -> R
 {
     EVENT_LOOP.with(|maybe_event_loop| {
-        match &*maybe_event_loop.borrow() {
-            &None => panic!("current thread has no event loop"),
-            &Some(ref event_loop) => f(event_loop),
+        match *maybe_event_loop.borrow() {
+            None => panic!("current thread has no event loop"),
+            Some(ref event_loop) => f(event_loop),
         }
     })
 }

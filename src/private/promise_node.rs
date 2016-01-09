@@ -138,11 +138,11 @@ impl <T, E> Event for ChainEvent<T, E> {
 
                 let mut shorten = false;
                 let self_state = self.state.clone(); // TODO better control flow
-                match &mut *self.state.borrow_mut() {
-                    &mut ChainState::Step2(_, Some(_)) => {
+                match *self.state.borrow_mut() {
+                    ChainState::Step2(_, Some(_)) => {
                         shorten = true;
                     }
-                    &mut ChainState::Step2(ref mut inner, None) => {
+                    ChainState::Step2(ref mut inner, None) => {
                         inner.set_self_pointer(Rc::downgrade(&self_state));
                     }
                     _ => { unreachable!() }
@@ -197,14 +197,14 @@ impl <T, E> Chain<T, E> {
 
 impl <T, E> PromiseNode<T, E> for Chain<T, E> {
     fn on_ready(&mut self, event: EventHandle) {
-        match &mut *self.state.borrow_mut() {
-            &mut ChainState::Step2(ref mut inner, _) => {
+        match *self.state.borrow_mut() {
+            ChainState::Step2(ref mut inner, _) => {
                 inner.on_ready(event);
             }
-            &mut ChainState::Step1(_, Some(_), _) => {
+            ChainState::Step1(_, Some(_), _) => {
                 panic!("on_ready() can only be called once.");
             }
-            &mut ChainState::Step1(_, ref mut on_ready_event, _) => {
+            ChainState::Step1(_, ref mut on_ready_event, _) => {
                 *on_ready_event = Some(event);
             }
             _ => { panic!() }
@@ -222,11 +222,11 @@ impl <T, E> PromiseNode<T, E> for Chain<T, E> {
         }
     }
     fn set_self_pointer(&mut self, chain_state: Weak<RefCell<ChainState<T, E>>>) {
-        match &mut *self.state.borrow_mut() {
-            &mut ChainState::Step1(_, _, ref mut self_ptr) => {
+        match *self.state.borrow_mut() {
+            ChainState::Step1(_, _, ref mut self_ptr) => {
                 *self_ptr = Some(chain_state);
             }
-            &mut ChainState::Step2(_, ref mut self_ptr) => {
+            ChainState::Step2(_, ref mut self_ptr) => {
                 *self_ptr = Some(chain_state);
             }
             _ => { panic!() }
@@ -497,11 +497,11 @@ impl <T, E> ForkHub<T, E> where T: 'static + Clone, E: 'static + Clone {
     pub fn add_branch(hub: &Rc<RefCell<ForkHub<T, E>>>) -> Promise<T, E> {
         {
             let ref state = &hub.borrow().state;
-            match &state.borrow().stage {
-                &ForkHubStage::Done(Ok(ref v)) => {
+            match state.borrow().stage {
+                ForkHubStage::Done(Ok(ref v)) => {
                     return Promise::ok(v.clone());
                 }
-                &ForkHubStage::Done(Err(ref e)) => {
+                ForkHubStage::Done(Err(ref e)) => {
                     return Promise::err(e.clone());
                 }
                 _ => {}
@@ -560,9 +560,9 @@ impl <T, E> PromiseNode<T, E> for ForkBranch<T, E> where T: Clone, E: Clone {
     }
     fn get(self: Box<Self>) -> Result<T, E> {
         let state = &self.hub.borrow().state;
-        let result = match &state.borrow().stage {
-            &ForkHubStage::Done(Ok(ref v)) => Ok(v.clone()),
-            &ForkHubStage::Done(Err(ref e)) => Err(e.clone()),
+        let result = match state.borrow().stage {
+            ForkHubStage::Done(Ok(ref v)) => Ok(v.clone()),
+            ForkHubStage::Done(Err(ref e)) => Err(e.clone()),
             _ => unreachable!(),
         };
         result
