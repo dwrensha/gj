@@ -205,7 +205,8 @@ impl <T, E> Promise <T, E> {
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
     /// Waiting within event callbacks is disallowed.
-    pub fn wait(mut self, _wait_scope: &WaitScope) -> Result<T, E> {
+    pub fn wait(mut self, wait_scope: &WaitScope) -> Result<T, E> {
+        drop(wait_scope);
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
@@ -228,7 +229,8 @@ impl <T, E> Promise <T, E> {
 }
 
 /// A scope in which asynchronous programming can occur. Corresponds to the top level scope
-/// of some [event loop](struct.EventLoop.html).
+/// of some [event loop](struct.EventLoop.html). Can be used to [wait](struct.Promise.html#method.wait)
+/// for the result of a promise.
 pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
 /// The result of `Promise::fork()`. Allows branches to be created. Dropping the `ForkedPromise`
