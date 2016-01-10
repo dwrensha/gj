@@ -41,16 +41,16 @@
 //!
 //! EventLoop::top_level(|wait_scope| {
 //!     let (stream1, stream2) = try!(unix::Stream::new_pair());
-//!     let promise1 = echo(stream1, vec![0; 5]);
+//!     let promise1 = echo(stream1, vec![0; 5]); // Tiny buffer just to be difficult.
 //!     let promise2 = stream2.write(b"hello world").lift().then(|(stream, _)| {
 //!         stream.read(vec![0; 11], 11).map(|(_, buf, _)| {
 //!             assert_eq!(buf, b"hello world");
 //!             Ok(())
 //!         }).lift()
 //!     });
-//!     Promise::all(vec![promise1, promise2].into_iter()).wait(wait_scope).unwrap();
+//!     try!(Promise::all(vec![promise1, promise2].into_iter()).wait(wait_scope));
 //!     Ok(())
-//! }).unwrap();
+//! }).expect("top level");
 //! ```
 
 

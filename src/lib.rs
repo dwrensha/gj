@@ -43,7 +43,7 @@
 //!     fulfiller1.fulfill(());
 //!     Promise::all(vec![promise3, promise4].into_iter()).wait(wait_scope).unwrap();
 //!     Ok(())
-//! }).unwrap();
+//! }).expect("top level");
 //! ```
 
 
@@ -95,7 +95,7 @@ impl <T, E> Promise <T, E> {
         Promise { node: Box::new(promise_node::Immediate::new(Err(error))) }
     }
 
-    /// Creates a new promise that never gets fulfilled.
+    /// Creates a new promise that never resolves.
     pub fn never_done() -> Promise<T, E> {
         Promise { node: Box::new(promise_node::NeverDone::new()) }
     }
