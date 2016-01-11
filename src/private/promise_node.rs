@@ -25,7 +25,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::result::Result;
 use {Promise};
-use private::{Event, EventDropper, OpaqueEventDropper, EventHandle, OnReadyEvent, PromiseNode};
+use private::{Event, EventDropper, EventHandle, OnReadyEvent, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -108,7 +108,7 @@ pub struct ChainEvent<T, E> where T: 'static, E: 'static {
 }
 
 impl <T, E> Event for ChainEvent<T, E> {
-    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
+    fn fire(&mut self) {
         let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
         match state {
             ChainState::Step1(inner, on_ready_event, self_ptr) => {
@@ -155,19 +155,11 @@ impl <T, E> Event for ChainEvent<T, E> {
                         ChainState::Step2(mut inner, Some(self_ptr)) => {
                             inner.set_self_pointer(self_ptr.clone());
                             let strong_self_ptr = self_ptr.upgrade().expect("dangling self pointer?");
-                            let self_state = ::std::mem::replace(&mut *strong_self_ptr.borrow_mut(),
-                                                                 ChainState::Step2(inner, None));
-                            match self_state {
-                                ChainState::Step2(inner, _) => {
-                                    Some(Box::new(inner))
-                                }
-                                _ => unreachable!(),
-                            }
+                            ::std::mem::replace(&mut *strong_self_ptr.borrow_mut(),
+                                                ChainState::Step2(inner, None));
                         }
                         _ => { unreachable!() }
                     }
-                } else {
-                    None
                 }
             }
             _ => panic!("should be in step 1"),
@@ -241,7 +233,7 @@ struct ArrayJoinBranch<T,E> where T: 'static, E: 'static {
 }
 
 impl <T,E> Event for ArrayJoinBranch<T,E> {
-    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
+    fn fire(&mut self) {
         let strong_state = self.state.upgrade().expect("dangling pointer?");
         let state = &mut *strong_state.borrow_mut();
         let stage = ::std::mem::replace(&mut state.stage,
@@ -255,7 +247,7 @@ impl <T,E> Event for ArrayJoinBranch<T,E> {
                 match branch_stage {
                     ArrayBranchStage::Uninit => unreachable!(),
                     ArrayBranchStage::Done(_) => unreachable!(),
-                    ArrayBranchStage::Waiting(p, d) => {
+                    ArrayBranchStage::Waiting(p, _) => {
                         match p.get() {
                             Ok(v) => {
                                 branches[self.index] = ArrayBranchStage::Done(v);
@@ -270,7 +262,6 @@ impl <T,E> Event for ArrayJoinBranch<T,E> {
                                 state.on_ready_event.arm();
                             }
                         }
-                        Some(Box::new(d))
                     }
                 }
             }
@@ -368,7 +359,7 @@ struct ExclusiveJoinBranch<T, E> {
 }
 
 impl<T, E> Event for ExclusiveJoinBranch<T, E> {
-    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
+    fn fire(&mut self) {
         let state = &mut *self.state.borrow_mut();
         match self.side {
             ExclusiveJoinSide::Left => {
@@ -379,7 +370,6 @@ impl<T, E> Event for ExclusiveJoinBranch<T, E> {
             }
         }
         state.on_ready_event.arm();
-        return None;
     }
 }
 
@@ -527,7 +517,7 @@ pub struct ForkEvent<T, E> where T: 'static + Clone, E: 'static + Clone {
 }
 
 impl <T, E> Event for ForkEvent<T, E> where T: 'static + Clone, E: 'static + Clone {
-    fn fire(&mut self) -> Option<Box<OpaqueEventDropper>> {
+    fn fire(&mut self) {
         // Dependency is ready.  Fetch its result and then delete the node.
         let stage = ::std::mem::replace(&mut self.state.borrow_mut().stage,
                                         ForkHubStage::Uninitialized);
@@ -545,7 +535,6 @@ impl <T, E> Event for ForkEvent<T, E> where T: 'static + Clone, E: 'static + Clo
             }
         }
         self.state.borrow_mut().stage = ForkHubStage::Done(result);
-        None
     }
 }
 

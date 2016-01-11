@@ -336,7 +336,7 @@ impl EventLoop {
             }
         });
 
-        return result;
+        result
     }
 
     fn arm_depth_first(&self, event_handle: private::EventHandle) {
@@ -389,7 +389,7 @@ impl EventLoop {
         self.currently_firing.set(Some(event_handle));
         let mut event = ::std::mem::replace(&mut self.events.borrow_mut()[event_handle.0].event, None)
             .expect("No event to fire?");
-        let _dropper = event.fire();
+        event.fire();
         self.currently_firing.set(None);
 
         let maybe_next = self.events.borrow()[event_handle.0].next;
