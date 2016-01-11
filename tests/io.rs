@@ -19,21 +19,23 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#[macro_use]
 extern crate gj;
+use gj::{EventLoop, Promise};
+use gj::io::{AsyncRead, AsyncWrite, tcp, unix};
 
 #[test]
 fn hello() {
-    use gj::io::{AsyncRead, AsyncWrite};
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
 
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10000").unwrap();
-        let listener = gj::io::tcp::Listener::bind(addr).unwrap();
+        let listener = tcp::Listener::bind(addr).unwrap();
 
         let _write_promise = listener.accept().lift::<::std::io::Error>().then(move |(_, stream)| {
             stream.write(vec![0,1,2,3,4,5]).lift()
         });
 
-        let read_promise = gj::io::tcp::Stream::connect(addr).lift::<::std::io::Error>().then(move |stream| {
+        let read_promise = tcp::Stream::connect(addr).lift::<::std::io::Error>().then(move |stream| {
             stream.read(vec![0u8; 6], 6).lift()
         });
 
@@ -44,14 +46,12 @@ fn hello() {
     }).unwrap();
 }
 
-
 #[test]
 fn echo() {
-    use gj::io::{AsyncRead, AsyncWrite};
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
 
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10001").unwrap();
-        let listener = gj::io::tcp::Listener::bind(addr).unwrap();
+        let listener = tcp::Listener::bind(addr).unwrap();
 
         let _server_promise = listener.accept().lift::<::std::io::Error>().then(move |(_, stream)| {
             stream.read(vec![0u8; 6], 6).lift().then(move |(stream, mut v, _)| {
@@ -63,7 +63,7 @@ fn echo() {
             })
         });
 
-        let client_promise = gj::io::tcp::Stream::connect(addr).lift::<::std::io::Error>().then(move |stream| {
+        let client_promise = tcp::Stream::connect(addr).lift::<::std::io::Error>().then(move |stream| {
             stream.write(vec![7,6,5,4,3,2]).lift().then(move |(stream, v)| {
                 stream.read(v, 6).lift()
             })
@@ -71,6 +71,24 @@ fn echo() {
 
         let (_, buf, _) = client_promise.wait(wait_scope).unwrap();
         assert_eq!(&buf[..], [8,7,6,5,4,3]);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn deregister_dupped() {
+    EventLoop::top_level(|wait_scope| {
+        let (stream1, stream2) = try!(unix::Stream::new_pair());
+        let stream1_dupped = try!(stream1.try_clone());
+        drop(stream1);
+
+        let promise1 = stream1_dupped.read(vec![0u8; 6], 6).then(|(stream, v, _)| {
+            Promise::ok(())
+        });
+        let promise2 = stream2.write(vec![1,2,3,4,5,6]);
+
+        promise1.wait(wait_scope);
+
         Ok(())
     }).unwrap();
 }
