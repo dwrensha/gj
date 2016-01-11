@@ -21,7 +21,7 @@
 
 #[macro_use]
 extern crate gj;
-use gj::{EventLoop, Promise};
+use gj::{EventLoop};
 use gj::io::{AsyncRead, AsyncWrite, tcp, unix};
 
 #[test]
@@ -77,18 +77,16 @@ fn echo() {
 
 #[test]
 fn deregister_dupped() {
+    // At one point, this panicked on Linux with "invalid handle idx".
     EventLoop::top_level(|wait_scope| {
         let (stream1, stream2) = try!(unix::Stream::new_pair());
         let stream1_dupped = try!(stream1.try_clone());
         drop(stream1);
 
-        let promise1 = stream1_dupped.read(vec![0u8; 6], 6).then(|(stream, v, _)| {
-            Promise::ok(())
-        });
-        let promise2 = stream2.write(vec![1,2,3,4,5,6]);
+        let promise1 = stream1_dupped.read(vec![0u8; 6], 6);
+        let _promise2 = stream2.write(vec![1,2,3,4,5,6]);
 
-        promise1.wait(wait_scope);
-
+        let _ = promise1.wait(wait_scope);
         Ok(())
     }).unwrap();
 }
