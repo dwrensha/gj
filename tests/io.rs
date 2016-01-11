@@ -21,7 +21,7 @@
 
 #[macro_use]
 extern crate gj;
-use gj::{EventLoop};
+use gj::{EventLoop, Promise};
 use gj::io::{AsyncRead, AsyncWrite, tcp, unix};
 
 #[test]
@@ -76,7 +76,7 @@ fn echo() {
 }
 
 #[test]
-fn deregister_dupped() {
+fn deregister_dupped_unix() {
     // At one point, this panicked on Linux with "invalid handle idx".
     EventLoop::top_level(|wait_scope| {
         let (stream1, stream2) = try!(unix::Stream::new_pair());
@@ -87,6 +87,35 @@ fn deregister_dupped() {
         let _promise2 = stream2.write(vec![1,2,3,4,5,6]);
 
         let _ = promise1.wait(wait_scope);
+        Ok(())
+    }).unwrap();
+}
+
+
+#[test]
+fn deregister_dupped_tcp() {
+    // At one point, this panicked on Linux with "invalid handle idx".
+    EventLoop::top_level(|wait_scope| {
+        let addr = ::std::str::FromStr::from_str("127.0.0.1:10002").unwrap();
+        let listener = tcp::Listener::bind(addr).unwrap();
+
+        let server_promise = listener.accept().lift::<::std::io::Error>().map(move |(_, stream1)| {
+            Ok(Some(stream1))
+        });
+        let client_promise = tcp::Stream::connect(addr).lift::<::std::io::Error>().map(|stream2| Ok(Some(stream2)));
+        let promise = Promise::all(vec![server_promise, client_promise].into_iter()).then(|mut streams| {
+            let stream0 = streams[0].take().unwrap();
+            let stream1 = streams[1].take().unwrap();
+            let stream0_dupped = pry!(stream0.try_clone());
+            drop(stream0);
+
+            let promise1 = stream0_dupped.read(vec![0u8; 6], 6).lift();
+            let promise2 = stream1.write(vec![1,2,3,4,5,6]).lift();
+
+            promise2.then(|_| promise1)
+        });
+
+        let _ = promise.wait(wait_scope);
         Ok(())
     }).unwrap();
 }

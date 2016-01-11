@@ -47,6 +47,7 @@ impl Drop for Listener {
     fn drop(&mut self) {
         with_current_event_loop(move |event_loop| {
             event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
+            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.listener);
         })
     }
 }
@@ -121,6 +122,7 @@ impl Drop for Stream {
     fn drop(&mut self) {
         with_current_event_loop(move |event_loop| {
             event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
+            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.stream);
         })
     }
 }
