@@ -282,7 +282,8 @@ pub struct EventLoop {
     head: private::EventHandle,
     tail: Cell<private::EventHandle>,
     depth_first_insertion_point: Cell<private::EventHandle>,
-    currently_firing: Cell<Option<private::EventHandle>>
+    currently_firing: Cell<Option<private::EventHandle>>,
+    to_destroy: Cell<Option<private::EventHandle>>,
 }
 
 
@@ -307,6 +308,7 @@ impl EventLoop {
                 tail: Cell::new(head_handle),
                 depth_first_insertion_point: Cell::new(head_handle), // insert after this node
                 currently_firing: Cell::new(None),
+                to_destroy: Cell::new(None),
             };
 
             assert!(maybe_event_loop.borrow().is_none());
@@ -392,11 +394,8 @@ impl EventLoop {
 
         let maybe_next = self.events.borrow()[event_handle.0].next;
         self.events.borrow_mut()[self.head.0].next = maybe_next;
-        match maybe_next {
-            Some(e) => {
-                self.events.borrow_mut()[e.0].prev = Some(self.head);
-            }
-            None => {}
+        if let Some(e) = maybe_next {
+            self.events.borrow_mut()[e.0].prev = Some(self.head);
         }
 
         self.events.borrow_mut()[event_handle.0].next = None;
@@ -407,7 +406,13 @@ impl EventLoop {
         }
 
         self.depth_first_insertion_point.set(self.head);
-        return true;
+
+        if let Some(event_handle) = self.to_destroy.get() {
+            self.events.borrow_mut().remove(event_handle.0);
+            self.to_destroy.set(None);
+        }
+
+        true
     }
 }
 

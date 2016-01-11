@@ -628,7 +628,6 @@ fn fork_branch_after_resolve() {
 }
 
 #[test]
-#[should_panic(expected = "Promise callback destroyed itself.")]
 #[allow(path_statements)]
 fn knotty() {
     use std::rc::Rc;
@@ -638,11 +637,8 @@ fn knotty() {
         let maybe_promise2 = maybe_promise.clone();
 
         let knotted_promise: Promise<(), ()> = Promise::ok(()).map(move |()| {
-
             // We will arrange for this to be the only remaining reference to knotted_promise.
-            // AFter the callback runs, the promise will get dropped, triggering a panic.
-            maybe_promise2;
-
+            drop(maybe_promise2);
             Ok(())
         }).eagerly_evaluate();
 
@@ -662,7 +658,7 @@ fn eagerly_evaluate() {
     use std::rc::Rc;
     use std::cell::Cell;
 
-    gj::EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| {
         let called: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let called1 = called.clone();
         let mut promise: Promise<(),()> = Promise::ok(()).map(move |()| {

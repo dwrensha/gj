@@ -103,39 +103,38 @@ impl Drop for EventDropper {
     fn drop(&mut self) {
         with_current_event_loop(|event_loop| {
             match event_loop.currently_firing.get() {
-                Some(h) if h == self.event_handle => panic!("Promise callback destroyed itself."),
+                Some(h) if h == self.event_handle => {
+                    event_loop.to_destroy.set(Some(self.event_handle));
+                    return;
+                }
                 _ => (),
             }
             let maybe_event_node = event_loop.events.borrow_mut().remove(self.event_handle.0);
 
-            match maybe_event_node {
-                None => {}
-                Some(event_node) => {
+            if let Some(event_node) = maybe_event_node {
+                // event_node.next.prev = event_node.prev
+                match event_node.next {
+                    Some(e) => {
+                        event_loop.events.borrow_mut()[e.0].prev = event_node.prev;
+                    }
+                    None => {}
+                }
+                // event_node.prev.next = event_node.next
+                match event_node.prev {
+                    Some(e) => {
+                        event_loop.events.borrow_mut()[e.0].next = event_node.next;
+                    }
+                    None => {}
+                }
 
-                    // event_node.next.prev = event_node.prev
-                    match event_node.next {
-                        Some(e) => {
-                            event_loop.events.borrow_mut()[e.0].prev = event_node.prev;
-                        }
-                        None => {}
-                    }
-                    // event_node.prev.next = event_node.next
-                    match event_node.prev {
-                        Some(e) => {
-                            event_loop.events.borrow_mut()[e.0].next = event_node.next;
-                        }
-                        None => {}
-                    }
+                let insertion_point = event_loop.depth_first_insertion_point.get();
+                if insertion_point.0 == self.event_handle.0 {
+                    event_loop.depth_first_insertion_point.set(event_node.prev.unwrap());
+                }
 
-                    let insertion_point = event_loop.depth_first_insertion_point.get();
-                    if insertion_point.0 == self.event_handle.0 {
-                        event_loop.depth_first_insertion_point.set(event_node.prev.unwrap());
-                    }
-
-                    let tail = event_loop.tail.get();
-                    if tail.0 == self.event_handle.0 {
-                        event_loop.tail.set(event_node.prev.unwrap());
-                    }
+                let tail = event_loop.tail.get();
+                if tail.0 == self.event_handle.0 {
+                    event_loop.tail.set(event_node.prev.unwrap());
                 }
             }
         });
