@@ -113,18 +113,12 @@ impl Drop for EventDropper {
 
             if let Some(event_node) = maybe_event_node {
                 // event_node.next.prev = event_node.prev
-                match event_node.next {
-                    Some(e) => {
-                        event_loop.events.borrow_mut()[e.0].prev = event_node.prev;
-                    }
-                    None => {}
+                if let Some(e) = event_node.next {
+                    event_loop.events.borrow_mut()[e.0].prev = event_node.prev;
                 }
                 // event_node.prev.next = event_node.next
-                match event_node.prev {
-                    Some(e) => {
-                        event_loop.events.borrow_mut()[e.0].next = event_node.next;
-                    }
-                    None => {}
+                if let Some(e) = event_node.prev {
+                    event_loop.events.borrow_mut()[e.0].next = event_node.next;
                 }
 
                 let insertion_point = event_loop.depth_first_insertion_point.get();
