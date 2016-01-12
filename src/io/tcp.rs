@@ -22,20 +22,12 @@
 //! TCP sockets.
 
 use std::result::Result;
-use std::rc::Rc;
-use std::cell::RefCell;
-use handle_table::{Handle};
-use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
-           FdObserver, HasHandle, register_new_handle,
-           Error};
-use {Promise};
-use private::{with_current_event_loop};
+use handle_table::Handle;
+use io::{FdObserver, register_new_handle, Error};
+use Promise;
+use private::with_current_event_loop;
 
-pub struct Stream {
-    stream: ::mio::tcp::TcpStream,
-    handle: Handle,
-    no_send: ::std::marker::PhantomData<*mut ()>, // impl !Send for Stream
-}
+pub type Stream = ::io::stream::Stream<::mio::tcp::TcpStream>;
 
 pub struct Listener {
     listener: ::mio::tcp::TcpListener,
@@ -58,10 +50,18 @@ impl Listener {
         let handle = FdObserver::new();
 
         with_current_event_loop(move |event_loop| {
-            try!(event_loop.event_port.borrow_mut().reactor.register(&listener, ::mio::Token(handle.val),
-                                                                     ::mio::EventSet::readable(),
-                                                                     ::mio::PollOpt::edge()));
-            Ok(Listener { listener: listener, handle: handle, no_send: ::std::marker::PhantomData })
+            try!(event_loop.event_port
+                           .borrow_mut()
+                           .reactor
+                           .register(&listener,
+                                     ::mio::Token(handle.val),
+                                     ::mio::EventSet::readable(),
+                                     ::mio::PollOpt::edge()));
+            Ok(Listener {
+                listener: listener,
+                handle: handle,
+                no_send: ::std::marker::PhantomData,
+            })
         })
     }
 
@@ -80,11 +80,13 @@ impl Listener {
             }
             None => {
                 with_current_event_loop(move |event_loop| {
-                    let promise =
-                        event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
-                    promise.then_else(move |r| match r {
-                        Ok(()) => self.accept_internal(),
-                        Err(e) => Promise::err(Error::new(self, e))
+                    let promise = event_loop.event_port.borrow_mut().handler.observers[self.handle]
+                                      .when_becomes_readable();
+                    promise.then_else(move |r| {
+                        match r {
+                            Ok(()) => self.accept_internal(),
+                            Err(e) => Promise::err(Error::new(self, e)),
+                        }
                     })
                 })
             }
@@ -96,42 +98,7 @@ impl Listener {
     }
 }
 
-impl ::std::io::Read for Stream {
-    fn read(&mut self, buf: &mut [u8]) -> ::std::io::Result<usize> {
-        use std::io::Read;
-        self.stream.read(buf)
-    }
-}
-
-impl ::std::io::Write for Stream {
-    fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
-        use std::io::Write;
-        self.stream.write(buf)
-    }
-    fn flush(&mut self) -> ::std::io::Result<()> {
-        use std::io::Write;
-        self.stream.flush()
-    }
-}
-
-impl HasHandle for Stream {
-    fn get_handle(&self) -> Handle { self.handle }
-}
-
-impl Drop for Stream {
-    fn drop(&mut self) {
-        with_current_event_loop(move |event_loop| {
-            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
-            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.stream);
-        })
-    }
-}
-
 impl Stream {
-    fn new(stream: ::mio::tcp::TcpStream, handle: Handle) -> Stream {
-        Stream { stream: stream, handle: handle, no_send: ::std::marker::PhantomData }
-    }
-
     pub fn connect(addr: ::std::net::SocketAddr) -> Promise<Stream, ::std::io::Error> {
         Promise::ok(()).then(move |()| {
             let stream = pry!(::mio::tcp::TcpStream::connect(&addr));
@@ -142,8 +109,8 @@ impl Stream {
             let handle = pry!(register_new_handle(&stream));
 
             with_current_event_loop(move |event_loop| {
-                let promise =
-                    event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
+                let promise = event_loop.event_port.borrow_mut().handler.observers[handle]
+                                  .when_becomes_writable();
                 promise.map(move |()| {
                     try!(stream.take_socket_error());
                     Ok(Stream::new(stream, handle))
@@ -153,14 +120,9 @@ impl Stream {
     }
 
     pub fn try_clone(&self) -> Result<Stream, ::std::io::Error> {
-        let stream = try!(self.stream.try_clone());
+        let stream = try!(self.stream().try_clone());
         let handle = try!(register_new_handle(&stream));
         Ok(Stream::new(stream, handle))
-    }
-
-    pub fn split(self) -> (Reader, Writer) {
-        let inner = Rc::new(RefCell::new(self));
-        (Reader { stream: inner.clone() }, Writer { stream: inner })
     }
 
     #[cfg(unix)]
@@ -171,65 +133,6 @@ impl Stream {
     }
 }
 
-impl AsyncRead for Stream {
-    fn try_read<T>(self, buf: T,
-               min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
-        where T: AsMut<[u8]>
-    {
-        try_read_internal(self, buf, 0, min_bytes)
-    }
-}
+pub type Reader = ::io::stream::Reader<::mio::tcp::TcpStream>;
 
-impl AsyncWrite for Stream {
-    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: AsRef<[u8]> {
-        write_internal(self, buf, 0)
-    }
-}
-
-pub struct Reader {
-    stream: Rc<RefCell<Stream>>
-}
-
-impl ::std::io::Read for Reader {
-    fn read(&mut self, buf: &mut [u8]) -> ::std::io::Result<usize> {
-        use std::io::Read;
-        self.stream.borrow_mut().stream.read(buf)
-    }
-}
-
-impl HasHandle for Reader {
-    fn get_handle(&self) -> Handle { self.stream.borrow().handle }
-}
-
-impl AsyncRead for Reader {
-    fn try_read<T>(self, buf: T, min_bytes: usize) -> Promise<(Self, T, usize), Error<(Self, T)>>
-        where T: AsMut<[u8]>
-    {
-        try_read_internal(self, buf, 0, min_bytes)
-    }
-}
-
-pub struct Writer {
-    stream: Rc<RefCell<Stream>>
-}
-
-impl ::std::io::Write for Writer {
-    fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
-        use std::io::Write;
-        self.stream.borrow_mut().stream.write(buf)
-    }
-    fn flush(&mut self) -> ::std::io::Result<()> {
-        use std::io::Write;
-        self.stream.borrow_mut().flush()
-    }
-}
-
-impl HasHandle for Writer {
-    fn get_handle(&self) -> Handle { self.stream.borrow().handle }
-}
-
-impl AsyncWrite for Writer {
-    fn write<T>(self, buf: T) -> Promise<(Self, T), Error<(Self, T)>> where T: AsRef<[u8]> {
-        write_internal(self, buf, 0)
-    }
-}
+pub type Writer = ::io::stream::Writer<::mio::tcp::TcpStream>;

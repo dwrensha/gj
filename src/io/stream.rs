@@ -83,6 +83,14 @@ impl<S> Stream<S> where S: ::mio::Evented
         let inner = Rc::new(RefCell::new(self));
         (Reader { stream: inner.clone() }, Writer { stream: inner })
     }
+
+    pub fn stream(&self) -> &S {
+        &self.stream
+    }
+
+    pub fn stream_mut(&mut self) -> &mut S {
+        &mut self.stream
+    }
 }
 
 impl<S> AsyncRead for Stream<S> where S: ::std::io::Read + ::mio::Evented + 'static
