@@ -22,7 +22,8 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use handle_table::Handle;
-use io::{AsyncRead, AsyncWrite, try_read_internal, write_internal, HasHandle, Error};
+use io::{AsyncRead, AsyncWrite, try_read_internal, write_internal, FdObserver, HasHandle,
+         register_new_handle, Error};
 use Promise;
 use private::with_current_event_loop;
 
@@ -168,5 +169,82 @@ impl<S> AsyncWrite for Writer<S> where S: ::std::io::Write + ::mio::Evented + 's
         where T: AsRef<[u8]>
     {
         write_internal(self, buf, 0)
+    }
+}
+
+pub struct Listener<L: ::mio::Evented + ::mio::TryAccept>
+    where L::Output: ::mio::Evented
+{
+    listener: L,
+    handle: Handle,
+    no_send: ::std::marker::PhantomData<*mut ()>, // impl !Send for Listener
+}
+
+impl<L> Drop for Listener<L>
+    where L: ::mio::Evented + ::mio::TryAccept,
+          L::Output: ::mio::Evented
+{
+    fn drop(&mut self) {
+        with_current_event_loop(move |event_loop| {
+            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
+            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.listener);
+        })
+    }
+}
+
+impl<L> Listener<L>
+    where L: ::mio::Evented + ::mio::TryAccept,
+          L::Output: ::mio::Evented
+{
+    pub fn new(listener: L) -> Result<Listener<L>, ::std::io::Error> {
+        let handle = FdObserver::new();
+
+        with_current_event_loop(move |event_loop| {
+            try!(event_loop.event_port
+                           .borrow_mut()
+                           .reactor
+                           .register(&listener,
+                                     ::mio::Token(handle.val),
+                                     ::mio::EventSet::readable(),
+                                     ::mio::PollOpt::edge()));
+            Ok(Listener {
+                listener: listener,
+                handle: handle,
+                no_send: ::std::marker::PhantomData,
+            })
+        })
+    }
+
+    fn accept_internal(self) -> Promise<(Listener<L>, Stream<L::Output>), Error<Listener<L>>> {
+        use mio::TryAccept;
+        let accept_result = match self.listener.accept() {
+            Err(e) => return Promise::err(Error::new(self, e)),
+            Ok(v) => v,
+        };
+        match accept_result {
+            Some(stream) => {
+                let handle = match register_new_handle(&stream) {
+                    Err(e) => return Promise::err(Error::new(self, e)),
+                    Ok(v) => v,
+                };
+                Promise::ok((self, Stream::new(stream, handle)))
+            }
+            None => {
+                with_current_event_loop(move |event_loop| {
+                    let promise = event_loop.event_port.borrow_mut().handler.observers[self.handle]
+                                      .when_becomes_readable();
+                    promise.then_else(move |r| {
+                        match r {
+                            Ok(()) => self.accept_internal(),
+                            Err(e) => Promise::err(Error::new(self, e)),
+                        }
+                    })
+                })
+            }
+        }
+    }
+
+    pub fn accept(self) -> Promise<(Listener<L>, Stream<L::Output>), Error<Listener<L>>> {
+        Promise::ok(()).then(move |()| self.accept_internal())
     }
 }

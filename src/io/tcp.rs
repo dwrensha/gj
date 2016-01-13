@@ -22,79 +22,17 @@
 //! TCP sockets.
 
 use std::result::Result;
-use handle_table::Handle;
-use io::{FdObserver, register_new_handle, Error};
+use io::register_new_handle;
 use Promise;
 use private::with_current_event_loop;
 
 pub type Stream = ::io::stream::Stream<::mio::tcp::TcpStream>;
 
-pub struct Listener {
-    listener: ::mio::tcp::TcpListener,
-    handle: Handle,
-    no_send: ::std::marker::PhantomData<*mut ()>, // impl !Send for Listener
-}
-
-impl Drop for Listener {
-    fn drop(&mut self) {
-        with_current_event_loop(move |event_loop| {
-            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
-            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.listener);
-        })
-    }
-}
+pub type Listener = ::io::stream::Listener<::mio::tcp::TcpListener>;
 
 impl Listener {
     pub fn bind(addr: ::std::net::SocketAddr) -> Result<Listener, ::std::io::Error> {
-        let listener = try!(::mio::tcp::TcpListener::bind(&addr));
-        let handle = FdObserver::new();
-
-        with_current_event_loop(move |event_loop| {
-            try!(event_loop.event_port
-                           .borrow_mut()
-                           .reactor
-                           .register(&listener,
-                                     ::mio::Token(handle.val),
-                                     ::mio::EventSet::readable(),
-                                     ::mio::PollOpt::edge()));
-            Ok(Listener {
-                listener: listener,
-                handle: handle,
-                no_send: ::std::marker::PhantomData,
-            })
-        })
-    }
-
-    fn accept_internal(self) -> Promise<(Listener, Stream), Error<Listener>> {
-        let accept_result = match self.listener.accept() {
-            Err(e) => return Promise::err(Error::new(self, e)),
-            Ok(v) => v,
-        };
-        match accept_result {
-            Some((stream, _)) => {
-                let handle = match register_new_handle(&stream) {
-                    Err(e) => return Promise::err(Error::new(self, e)),
-                    Ok(v) => v,
-                };
-                Promise::ok((self, Stream::new(stream, handle)))
-            }
-            None => {
-                with_current_event_loop(move |event_loop| {
-                    let promise = event_loop.event_port.borrow_mut().handler.observers[self.handle]
-                                      .when_becomes_readable();
-                    promise.then_else(move |r| {
-                        match r {
-                            Ok(()) => self.accept_internal(),
-                            Err(e) => Promise::err(Error::new(self, e)),
-                        }
-                    })
-                })
-            }
-        }
-    }
-
-    pub fn accept(self) -> Promise<(Listener, Stream), Error<Listener>> {
-        Promise::ok(()).then(move |()| self.accept_internal())
+        Listener::new(try!(::mio::tcp::TcpListener::bind(&addr)))
     }
 }
 
