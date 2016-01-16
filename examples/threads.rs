@@ -28,16 +28,14 @@
 //! on separate event loops. The example program illustrates how that might work, using
 //! `std::thread::sleep_ms()` as a stand-in for a blocking computation.
 
-#![cfg(unix)]
-
 extern crate gj;
 use gj::Promise;
-use gj::io::{AsyncRead, AsyncWrite};
+use gj::io::{AsyncRead, AsyncWrite, unix};
 use std::time::Duration;
 
 fn child_loop(delay: Duration,
-              stream: gj::io::unix::Stream,
-              buf: Vec<u8>) -> gj::Promise<(), gj::io::Error<(gj::io::unix::Stream, Vec<u8>)>> {
+              stream: unix::Stream,
+              buf: Vec<u8>) -> Promise<(), gj::io::Error<(unix::Stream, Vec<u8>)>> {
 
     // This blocks the entire thread. This is okay because we are on a child thread
     // where nothing else needs to happen.
@@ -48,8 +46,8 @@ fn child_loop(delay: Duration,
     })
 }
 
-fn child(delay: Duration) -> Result<gj::io::unix::Stream, Box<::std::error::Error>> {
-    let (_, stream) = try!(gj::io::unix::spawn(move |parent_stream, wait_scope| {
+fn child(delay: Duration) -> Result<unix::Stream, Box<::std::error::Error>> {
+    let (_, stream) = try!(unix::spawn(move |parent_stream, wait_scope| {
         try!(child_loop(delay, parent_stream, vec![0u8]).lift::<Box<::std::error::Error>>().wait(wait_scope));
         Ok(())
     }));
@@ -57,8 +55,8 @@ fn child(delay: Duration) -> Result<gj::io::unix::Stream, Box<::std::error::Erro
 }
 
 fn listen_to_child(id: &'static str,
-                   stream: gj::io::unix::Stream,
-                   buf: Vec<u8>) -> gj::Promise<(), gj::io::Error<(gj::io::unix::Stream, Vec<u8>)>> {
+                   stream: unix::Stream,
+                   buf: Vec<u8>) -> Promise<(), gj::io::Error<(unix::Stream, Vec<u8>)>> {
     stream.read(buf, 1).then(move |(stream, buf, _n)| {
         println!("heard back from {}", id);
         listen_to_child(id, stream, buf)
