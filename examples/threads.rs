@@ -28,6 +28,7 @@
 //! on separate event loops. The example program illustrates how that might work, using
 //! `std::thread::sleep_ms()` as a stand-in for a blocking computation.
 
+#![cfg(unix)]
 
 extern crate gj;
 use gj::Promise;
