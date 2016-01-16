@@ -22,7 +22,7 @@
 #[macro_use]
 extern crate gj;
 use gj::{EventLoop, Promise};
-use gj::io::{AsyncRead, AsyncWrite, tcp, unix};
+use gj::io::{AsyncRead, AsyncWrite, tcp};
 
 #[test]
 fn hello() {
@@ -75,8 +75,10 @@ fn echo() {
     }).unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn deregister_dupped_unix() {
+    use gj::io::unix;
     // At one point, this panicked on Linux with "invalid handle idx".
     EventLoop::top_level(|wait_scope| {
         let (stream1, stream2) = try!(unix::Stream::new_pair());
