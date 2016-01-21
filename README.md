@@ -16,7 +16,7 @@ which is similar to Javascript's
 [`Promise`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise)
 class.
 
-Promises can be chained recursively and executed as lightweight stackless tasks.
+Promises that are chained recursively can be thought of as lightweight stackless tasks.
 A GJ event loop allows you to execute many such tasks on a single operating system thread
 and to safely share mutable data between them without any need for mutexes or atomics.
 
