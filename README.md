@@ -1,7 +1,7 @@
 # Good Job, promise-based concurrency
 
 [![Build Status](https://travis-ci.org/dwrensha/gj.svg?branch=master)](https://travis-ci.org/dwrensha/gj)
-[![crates.io](http://meritbadge.herokuapp.com/capnp)](https://crates.io/crates/gj)
+[![crates.io](http://meritbadge.herokuapp.com/gj)](https://crates.io/crates/gj)
 
 [documentation](http://docs.capnproto-rust.org/gj/index.html).
 
