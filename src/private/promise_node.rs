@@ -136,27 +136,24 @@ impl <T, E> Event for ChainEvent<T, E> {
                     }
                 }
 
-                let mut shorten = false;
                 let self_state = self.state.clone(); // TODO better control flow
-                match *self.state.borrow_mut() {
+                let maybe_shorten = match *self.state.borrow_mut() {
                     ChainState::Step2(_, Some(ref self_ptr)) => {
-                        if self_ptr.upgrade().is_some() {
-                            shorten = true;
-                        }
+                        self_ptr.upgrade()
                     }
                     ChainState::Step2(ref mut inner, None) => {
                         inner.set_self_pointer(Rc::downgrade(&self_state));
+                        None
                     }
                     _ => { unreachable!() }
-                }
+                };
 
-                if shorten {
+                if let Some(strong_self_ptr) = maybe_shorten {
                     let state = ::std::mem::replace(&mut *self.state.borrow_mut(), ChainState::Step3);
 
                     match state {
                         ChainState::Step2(mut inner, Some(self_ptr)) => {
                             inner.set_self_pointer(self_ptr.clone());
-                            let strong_self_ptr = self_ptr.upgrade().expect("dangling self pointer?");
                             ::std::mem::replace(&mut *strong_self_ptr.borrow_mut(),
                                                 ChainState::Step2(inner, None));
                         }
