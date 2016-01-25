@@ -25,7 +25,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::result::Result;
 use {Promise};
-use private::{Event, EventDropper, EventHandle, OnReadyEvent, PromiseNode};
+use private::{Event, EventDropper, GuardedEventHandle, OnReadyEvent, PromiseNode};
 
 
 /// A PromiseNode that transforms the result of another PromiseNode through an application-provided
@@ -47,7 +47,7 @@ impl <T, E, E1, DepT, Func> Transform<T, E, E1, DepT, Func>
 impl <T, E, E1, DepT, Func> PromiseNode<T, E1> for Transform<T, E, E1, DepT, Func>
     where Func: FnOnce(Result<DepT, E>) -> Result<T, E1>
 {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         self.dependency.on_ready(event);
     }
     fn get(self: Box<Self>) -> Result<T, E1> {
@@ -69,7 +69,7 @@ impl <T, E> Immediate<T, E> {
 }
 
 impl <T, E> PromiseNode<T, E> for Immediate<T, E> {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         event.arm_breadth_first();
     }
     fn get(self: Box<Self>) -> Result<T, E> {
@@ -89,7 +89,7 @@ impl <T, E> NeverDone<T, E> {
 }
 
 impl <T, E> PromiseNode<T, E> for NeverDone<T, E> {
-    fn on_ready(&mut self, _event: EventHandle) {
+    fn on_ready(&mut self, _event: GuardedEventHandle) {
         // ignore
     }
     fn get(self: Box<Self>) -> Result<T, E> {
@@ -98,7 +98,7 @@ impl <T, E> PromiseNode<T, E> for NeverDone<T, E> {
 }
 
 pub enum ChainState<T, E> where T: 'static, E: 'static {
-    Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<EventHandle>, Option<Weak<RefCell<ChainState<T, E>>>>),
+    Step1(Box<PromiseNode<Promise<T, E>, E>>, Option<GuardedEventHandle>, Option<Weak<RefCell<ChainState<T, E>>>>),
     Step2(Box<PromiseNode<T, E>>, Option<Weak<RefCell<ChainState<T, E>>>>),
     Step3 // done
 }
@@ -139,8 +139,10 @@ impl <T, E> Event for ChainEvent<T, E> {
                 let mut shorten = false;
                 let self_state = self.state.clone(); // TODO better control flow
                 match *self.state.borrow_mut() {
-                    ChainState::Step2(_, Some(_)) => {
-                        shorten = true;
+                    ChainState::Step2(_, Some(ref self_ptr)) => {
+                        if self_ptr.upgrade().is_some() {
+                            shorten = true;
+                        }
                     }
                     ChainState::Step2(ref mut inner, None) => {
                         inner.set_self_pointer(Rc::downgrade(&self_state));
@@ -178,7 +180,7 @@ impl <T, E> Chain<T, E> {
 
         let state = Rc::new(RefCell::new(ChainState::Step3));
         let event = Box::new(ChainEvent { state: state.clone() });
-        let (handle, dropper) = EventHandle::new();
+        let (handle, dropper) = GuardedEventHandle::new();
         handle.set(event);
         inner.on_ready(handle);
         *state.borrow_mut() = ChainState::Step1(inner, None, None);
@@ -188,7 +190,7 @@ impl <T, E> Chain<T, E> {
 }
 
 impl <T, E> PromiseNode<T, E> for Chain<T, E> {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         match *self.state.borrow_mut() {
             ChainState::Step2(ref mut inner, _) => {
                 inner.on_ready(event);
@@ -305,8 +307,8 @@ impl<T, E> ArrayJoin<T, E> {
             promises.into_iter()
             .map(|promise| {
                 let mut node = promise.node;
-                let (handle, dropper) = EventHandle::new();
-                node.on_ready(handle);
+                let (handle, dropper) = GuardedEventHandle::new();
+                node.on_ready(handle.clone());
                 handle.set(Box::new(ArrayJoinBranch {
                     index: idx,
                     state: Rc::downgrade(&state),
@@ -324,7 +326,7 @@ impl<T, E> ArrayJoin<T, E> {
 }
 
 impl <T, E> PromiseNode<Vec<T>, E> for ArrayJoin<T, E> {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         self.state.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<Vec<T>, E> {
@@ -391,8 +393,8 @@ impl<T, E> ExclusiveJoin<T, E> {
             left: None, right: None}));
 
         {
-            let (handle, dropper) = EventHandle::new();
-            left.on_ready(handle);
+            let (handle, dropper) = GuardedEventHandle::new();
+            left.on_ready(handle.clone());
             handle.set(Box::new(ExclusiveJoinBranch { state: state.clone(),
                                                       side: ExclusiveJoinSide::Left }));
 
@@ -400,8 +402,8 @@ impl<T, E> ExclusiveJoin<T, E> {
         }
 
         {
-            let (handle, dropper) = EventHandle::new();
-            right.on_ready(handle);
+            let (handle, dropper) = GuardedEventHandle::new();
+            right.on_ready(handle.clone());
             handle.set(Box::new(ExclusiveJoinBranch { state: state.clone(),
                                                       side: ExclusiveJoinSide::Right }));
 
@@ -413,7 +415,7 @@ impl<T, E> ExclusiveJoin<T, E> {
 }
 
 impl <T, E> PromiseNode<T, E> for ExclusiveJoin<T, E> {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         self.state.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<T, E> {
@@ -446,7 +448,7 @@ impl <T, U, E> Wrapper<T, U, E> {
 }
 
 impl <T, U, E> PromiseNode<T, E> for Wrapper<T, U, E> {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         self.node.on_ready(event);
     }
     fn get(self: Box<Self>) -> Result<T, E> {
@@ -473,8 +475,8 @@ pub struct ForkHub<T, E> where T: 'static + Clone, E: 'static + Clone {
 impl <T, E> ForkHub<T, E> where T: 'static + Clone, E: 'static + Clone {
     pub fn new(mut inner: Box<PromiseNode<T, E>>) -> ForkHub<T, E> {
         // TODO(someday): KJ calls setSelfPointer() here.
-        let (handle, dropper) = EventHandle::new();
-        inner.on_ready(handle);
+        let (handle, dropper) = GuardedEventHandle::new();
+        inner.on_ready(handle.clone());
         let state = Rc::new(RefCell::new(ForkHubState {branches: Vec::new(),
                                                        stage: ForkHubStage::Waiting(inner)}));
         let event = Box::new(ForkEvent { state: state.clone() }) as Box<Event>;
@@ -544,7 +546,7 @@ pub struct ForkBranch <T, E> where T: 'static + Clone, E: 'static + Clone {
 }
 
 impl <T, E> PromiseNode<T, E> for ForkBranch<T, E> where T: Clone, E: Clone {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         self.on_ready_event.borrow_mut().init(event);
     }
     fn get(self: Box<Self>) -> Result<T, E> {

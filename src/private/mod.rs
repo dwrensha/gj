@@ -19,7 +19,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::collections::HashMap;
 use std::result::Result;
@@ -43,7 +43,7 @@ pub fn with_current_event_loop<F, R>(f: F) -> R
 
 pub trait PromiseNode<T, E> {
     /// Arms the given event when the promised value is ready.
-    fn on_ready(&mut self, event: EventHandle);
+    fn on_ready(&mut self, event: GuardedEventHandle);
 
     /// Tells the node that `_self_ptr` is the pointer that owns this node, and will continue to own
     /// this node until it is destroyed or set_self_pointer() is called again. promise_node::Chain uses
@@ -60,31 +60,60 @@ pub trait Event {
 #[derive(PartialEq, Eq, Copy, Clone, Hash)]
 pub struct EventHandle(pub Handle);
 
-impl EventHandle {
-    pub fn new() -> (EventHandle, EventDropper) {
+/// When an EventDropper is dropped and its Event is removed, we are careful
+/// to clean up any references to it in the queue of armed events. However, there
+/// may be other references held by promises or unarmed events. Arguably, it should
+/// be considered a bug if those references aren't also automatically dropped, but...
+/// that has proven to be difficult to get right. Instead, we insist that these
+/// these references be of this `GuardedEventHandle` type, which autamatically gets
+/// invalidated when the drop occurs.
+pub struct GuardedEventHandle {
+    event_handle: EventHandle,
+    still_valid: Rc<Cell<bool>>,
+}
+
+impl Clone for GuardedEventHandle {
+    fn clone(&self) -> GuardedEventHandle {
+        GuardedEventHandle {
+            event_handle: self.event_handle,
+            still_valid: self.still_valid.clone(),
+        }
+    }
+}
+
+impl GuardedEventHandle {
+    pub fn new() -> (GuardedEventHandle, EventDropper) {
         with_current_event_loop(|event_loop| {
             let node = EventNode { event: None, next: None, prev: None };
             let handle = EventHandle(event_loop.events.borrow_mut().push(node));
-            (handle, EventDropper { event_handle: handle })
+            let guarded_handle = GuardedEventHandle {
+                event_handle: handle,
+                still_valid: Rc::new(Cell::new(true))
+            };
+            (guarded_handle.clone(), EventDropper { guarded_event_handle:  guarded_handle.clone() })
         })
     }
 
     pub fn set(&self, event: Box<Event>) {
         with_current_event_loop(|event_loop| {
-            event_loop.events.borrow_mut()[self.0].event = Some(event);
+            event_loop.events.borrow_mut()[self.event_handle.0].event = Some(event);
         })
     }
 
     pub fn arm_breadth_first(self) {
-        with_current_event_loop(|event_loop| {
-            event_loop.arm_breadth_first(self);
-        });
+        if self.still_valid.get() {
+            with_current_event_loop(|event_loop| {
+                event_loop.arm_breadth_first(self.event_handle);
+            });
+        }
     }
 
     pub fn arm_depth_first(self) {
-        with_current_event_loop(|event_loop| {
-            event_loop.arm_depth_first(self);
-        });
+        if self.still_valid.get() {
+            with_current_event_loop(|event_loop| {
+                event_loop.arm_depth_first(self.event_handle);
+            });
+        }
     }
 }
 
@@ -94,22 +123,23 @@ pub struct EventNode {
     pub prev: Option<EventHandle>
 }
 
-#[derive(PartialEq, Eq, Hash)]
 pub struct EventDropper {
-    event_handle: EventHandle,
+    guarded_event_handle: GuardedEventHandle,
 }
 
 impl Drop for EventDropper {
     fn drop(&mut self) {
+        self.guarded_event_handle.still_valid.set(false);
+        let self_event_handle = self.guarded_event_handle.event_handle;
         with_current_event_loop(|event_loop| {
             match event_loop.currently_firing.get() {
-                Some(h) if h == self.event_handle => {
-                    event_loop.to_destroy.set(Some(self.event_handle));
+                Some(h) if h == self_event_handle => {
+                    event_loop.to_destroy.set(Some(self_event_handle));
                     return;
                 }
                 _ => (),
             }
-            let maybe_event_node = event_loop.events.borrow_mut().remove(self.event_handle.0);
+            let maybe_event_node = event_loop.events.borrow_mut().remove(self_event_handle.0);
 
             if let Some(event_node) = maybe_event_node {
                 // event_node.next.prev = event_node.prev
@@ -122,12 +152,12 @@ impl Drop for EventDropper {
                 }
 
                 let insertion_point = event_loop.depth_first_insertion_point.get();
-                if insertion_point.0 == self.event_handle.0 {
+                if insertion_point.0 == self_event_handle.0 {
                     event_loop.depth_first_insertion_point.set(event_node.prev.unwrap());
                 }
 
                 let tail = event_loop.tail.get();
-                if tail.0 == self.event_handle.0 {
+                if tail.0 == self_event_handle.0 {
                     event_loop.tail.set(event_node.prev.unwrap());
                 }
             }
@@ -154,7 +184,7 @@ impl Event for BoolEvent {
 pub enum OnReadyEvent {
     Empty,
     AlreadyReady,
-    Full(EventHandle),
+    Full(GuardedEventHandle),
 }
 
 impl OnReadyEvent {
@@ -172,7 +202,7 @@ impl OnReadyEvent {
         }
     }
 
-    fn init(&mut self, new_event: EventHandle) {
+    fn init(&mut self, new_event: GuardedEventHandle) {
         if self.is_already_ready() {
             new_event.arm_breadth_first();
         } else {
@@ -243,7 +273,7 @@ impl <T, E> Drop for PromiseAndFulfillerWrapper<T, E> {
 }
 
 impl <T, E> PromiseNode<T, E> for PromiseAndFulfillerWrapper<T, E> {
-    fn on_ready(&mut self, event: EventHandle) {
+    fn on_ready(&mut self, event: GuardedEventHandle) {
         self.hub.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<T, E> {
@@ -268,16 +298,16 @@ impl <T, E> TaskSetImpl <T, E> {
     }
 
       pub fn add(&self, mut node: Box<PromiseNode<T, E>>) {
-          let (handle, dropper) = EventHandle::new();
-          node.on_ready(handle);
+          let (handle, dropper) = GuardedEventHandle::new();
+          node.on_ready(handle.clone());
           let task = Task {
               weak_reaper: Rc::downgrade(&self.reaper),
               weak_tasks: Rc::downgrade(&self.tasks),
               node: Some(node),
-              event_handle: handle
+              event_handle: handle.clone(),
           };
           handle.set(Box::new(task));
-          self.tasks.borrow_mut().insert(handle, dropper);
+          self.tasks.borrow_mut().insert(handle.event_handle, dropper);
     }
 }
 
@@ -285,7 +315,7 @@ pub struct Task<T, E> where T: 'static, E: 'static {
     weak_reaper: Weak<RefCell<Box<TaskReaper<T, E>>>>,
     weak_tasks: Weak<RefCell<HashMap<EventHandle, EventDropper>>>,
     node: Option<Box<PromiseNode<T, E>>>,
-    event_handle: EventHandle,
+    event_handle: GuardedEventHandle,
 }
 
 impl <T, E> Event for Task<T, E> {
@@ -313,6 +343,6 @@ impl <T, E> Event for Task<T, E> {
         }
         let tasks = self.weak_tasks.upgrade().expect("dangling reference to tasks?");
         let mut tmp = tasks.borrow_mut();
-        tmp.remove(&self.event_handle);
+        tmp.remove(&self.event_handle.event_handle);
     }
 }

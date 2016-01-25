@@ -210,7 +210,7 @@ impl <T, E> Promise <T, E> {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
-            let (handle, _dropper) = private::EventHandle::new();
+            let (handle, _dropper) = private::GuardedEventHandle::new();
             handle.set(Box::new(done_event));
             self.node.on_ready(handle);
 
