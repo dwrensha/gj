@@ -628,7 +628,6 @@ fn fork_branch_after_resolve() {
 }
 
 #[test]
-#[allow(path_statements)]
 fn knotty() {
     use std::rc::Rc;
     use std::cell::RefCell;
