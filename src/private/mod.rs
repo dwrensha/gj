@@ -341,8 +341,8 @@ impl <T, E> Event for Task<T, E> {
                 }
             }
         }
-        let tasks = self.weak_tasks.upgrade().expect("dangling reference to tasks?");
-        let mut tmp = tasks.borrow_mut();
-        tmp.remove(&self.event_handle.event_handle);
+        if let Some(tasks) = self.weak_tasks.upgrade() {
+            tasks.borrow_mut().remove(&self.event_handle.event_handle);
+        }
     }
 }

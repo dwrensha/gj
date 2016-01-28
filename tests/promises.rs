@@ -652,6 +652,25 @@ fn knotty() {
 }
 
 #[test]
+fn task_set_drop_self() {
+    // At one point, this panicked with "dangling reference to tasks?"
+    use std::rc::Rc;
+    use std::cell::RefCell;
+    EventLoop::top_level(|wait_scope| {
+        let tasks = Rc::new(RefCell::new(gj::TaskSet::new(Box::new(TaskReaperImpl::new()))));
+
+        let (promise, fulfiller) = Promise::<(),()>::and_fulfiller();
+        let promise = promise.attach(tasks.clone());
+        tasks.borrow_mut().add(promise);
+
+        drop(tasks);
+        fulfiller.fulfill(());
+        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+        Ok(())
+    }).expect("top level");
+}
+
+#[test]
 #[allow(unused_assignments)]
 fn eagerly_evaluate() {
     use std::rc::Rc;
