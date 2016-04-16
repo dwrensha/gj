@@ -26,7 +26,7 @@
 //!
 //! # Example
 //!
-//! ```
+//!
 //! use gj::{EventLoop, Promise};
 //! EventLoop::top_level(|wait_scope| {
 //!     let (promise1, fulfiller1) = Promise::<(),()>::and_fulfiller();
@@ -44,7 +44,7 @@
 //!     Promise::all(vec![promise3, promise4].into_iter()).wait(wait_scope).unwrap();
 //!     Ok(())
 //! }).expect("top level");
-//! ```
+//!
 
 
 extern crate mio;

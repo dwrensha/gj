@@ -27,7 +27,7 @@
 //! tasks that cannot easily yield, you can send tasks to separate threads where they will execute
 //! on separate event loops. The example program illustrates how that might work, using
 //! `std::thread::sleep_ms()` as a stand-in for a blocking computation.
-
+/*
 extern crate gj;
 use gj::Promise;
 use gj::io::{AsyncRead, AsyncWrite, unix};
@@ -71,8 +71,9 @@ fn parent_wait_loop() -> Promise<(), ::std::io::Error> {
         parent_wait_loop()
     })
 }
-
+*/
 pub fn main() {
+/*
     gj::EventLoop::top_level(|wait_scope| {
 
         let children = vec![
@@ -84,5 +85,5 @@ pub fn main() {
         try!(Promise::all(children.into_iter()).wait(wait_scope));
 
         Ok(())
-    }).unwrap();
+    }).unwrap(); */
 }

@@ -23,7 +23,7 @@
 //! initialization and uses them to serve up to N clients concurrently. When all buffers are in use,
 //! the server waits until the next buffer becomes available before accepting the next client
 //! connection.
-
+/*
 extern crate gj;
 
 use gj::io::{AsyncRead, AsyncWrite, Error, Slice, tcp};
@@ -121,9 +121,9 @@ fn accept_loop(listener: tcp::Listener,
         })
     })
 }
-
+*/
 pub fn main() {
-    let args: Vec<String> = ::std::env::args().collect();
+/*    let args: Vec<String> = ::std::env::args().collect();
     if args.len() != 2 {
         println!("usage: {} HOST:PORT", args[0]);
         return;
@@ -136,5 +136,5 @@ pub fn main() {
         let listener = try!(tcp::Listener::bind(addr));
         let reaper = Box::new(Reaper { buffer_pool: buffer_pool.clone() });
         accept_loop(listener, TaskSet::new(reaper), buffer_pool).lift().wait(wait_scope)
-    }).unwrap();
+    }).unwrap();*/
 }

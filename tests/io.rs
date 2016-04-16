@@ -18,7 +18,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-
+/*
 #[macro_use]
 extern crate gj;
 use gj::{EventLoop, Promise};
@@ -121,3 +121,4 @@ fn deregister_dupped_tcp() {
         Ok(())
     }).unwrap();
 }
+*/

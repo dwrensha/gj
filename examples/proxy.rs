@@ -18,7 +18,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-
+/*
 #[macro_use]
 extern crate gj;
 use std::net::ToSocketAddrs;
@@ -80,9 +80,9 @@ impl gj::TaskReaper<(), ::std::io::Error> for Reporter {
         println!("Task failed: {}", error);
     }
 }
-
+*/
 pub fn main() {
-    let args : Vec<String> = ::std::env::args().collect();
+/*    let args : Vec<String> = ::std::env::args().collect();
     if args.len() != 3 {
         println!("usage: {} <LISTEN_ADDR> <CONNECT_ADDR>", args[0]);
         return;
@@ -95,5 +95,5 @@ pub fn main() {
         let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
         accept_loop(listener, outbound_addr,
                     gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope)
-    }).unwrap();
+    }).unwrap(); */
 }
