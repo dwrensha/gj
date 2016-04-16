@@ -72,7 +72,7 @@ macro_rules! pry {
     })
 }
 
-pub mod io;
+//pub mod io;
 
 mod private;
 mod handle_table;
@@ -205,8 +205,9 @@ impl <T, E> Promise <T, E> {
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
     /// Waiting within event callbacks is disallowed.
-    pub fn wait(mut self, wait_scope: &WaitScope) -> Result<T, E> {
-        drop(wait_scope);
+    pub fn wait<E1>(mut self, event_source: &mut EventPort<E1>) -> Result<T, E>
+        where E: From<E1>
+    {
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
@@ -219,7 +220,7 @@ impl <T, E> Promise <T, E> {
             while !fired.get() {
                 if !event_loop.turn() {
                     // No events in the queue.
-                    event_loop.event_port.borrow_mut().wait();
+                    try!(event_source.wait());
                 }
             }
 
@@ -227,11 +228,6 @@ impl <T, E> Promise <T, E> {
         })
     }
 }
-
-/// A scope in which asynchronous programming can occur. Corresponds to the top level scope
-/// of some [event loop](struct.EventLoop.html). Can be used to [wait](struct.Promise.html#method.wait)
-/// for the result of a promise.
-pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
 /// The result of `Promise::fork()`. Allows branches to be created. Dropping the `ForkedPromise`
 /// along with any branches created through `add_branch()` will cancel the computation.
@@ -253,10 +249,10 @@ impl <T, E> ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
 }
 
 /// Interface between an `EventLoop` and events originating from outside of the loop's thread.
-trait EventPort {
+pub trait EventPort<E> {
     /// Waits for an external event to arrive, sleeping if necessary.
     /// Returns true if wake() has been called from another thread.
-    fn wait(&mut self) -> bool;
+    fn wait(&mut self) -> Result<bool, E>;
 
     /// Checks whether any external events have arrived, but does not sleep.
     /// Returns true if wake() has been called from another thread.
@@ -275,7 +271,7 @@ trait EventPort {
 /// A queue of events being executed in a loop on a single thread.
 pub struct EventLoop {
 //    daemons: TaskSetImpl,
-    event_port: RefCell<io::MioEventPort>,
+//    event_port: RefCell<Box<EventPort<E>>>,
     _running: bool,
     _last_runnable_state: bool,
     events: RefCell<handle_table::HandleTable<private::EventNode>>,
@@ -292,7 +288,7 @@ impl EventLoop {
     /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
     /// closure and then drops the event loop.
     pub fn top_level<F>(main: F) -> Result<(), Box<::std::error::Error>>
-        where F: FnOnce(&WaitScope) -> Result<(), Box<::std::error::Error>>
+        where F: FnOnce() -> Result<(), Box<::std::error::Error>>,
     {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
         let dummy = private::EventNode { event: None, next: None, prev: None };
@@ -300,7 +296,6 @@ impl EventLoop {
 
         EVENT_LOOP.with(move |maybe_event_loop| {
             let event_loop = EventLoop {
-                event_port: RefCell::new(io::MioEventPort::new().unwrap()),
                 _running: false,
                 _last_runnable_state: false,
                 events: RefCell::new(events),
@@ -314,9 +309,8 @@ impl EventLoop {
             assert!(maybe_event_loop.borrow().is_none());
             *maybe_event_loop.borrow_mut() = Some(event_loop);
         });
-        let wait_scope = WaitScope(::std::marker::PhantomData );
 
-        let result = main(&wait_scope);
+        let result = main();
 
         EVENT_LOOP.with(move |maybe_event_loop| {
             let el = ::std::mem::replace(&mut *maybe_event_loop.borrow_mut(), None);
