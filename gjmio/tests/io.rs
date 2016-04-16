@@ -27,8 +27,8 @@ use gjmio::{AsyncRead, AsyncWrite, tcp};
 
 #[test]
 fn hello() {
-    EventLoop::top_level(|wait_scope| {
-        let mut event_port = gjmio::EventPort::new().unwrap();
+    EventLoop::top_level(|wait_scope| -> Result<(), ::std::io::Error> {
+        let mut event_port = try!(gjmio::EventPort::new());
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10000").unwrap();
         let listener = tcp::Listener::bind(addr).unwrap();
 
@@ -49,8 +49,8 @@ fn hello() {
 
 #[test]
 fn echo() {
-    EventLoop::top_level(|wait_scope| {
-        let mut event_port = gjmio::EventPort::new().unwrap();
+    EventLoop::top_level(|wait_scope| -> Result<(), ::std::io::Error> {
+        let mut event_port = try!(gjmio::EventPort::new());
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10001").unwrap();
         let listener = tcp::Listener::bind(addr).unwrap();
 
@@ -81,8 +81,8 @@ fn echo() {
 fn deregister_dupped_unix() {
     use gjmio::unix;
     // At one point, this panicked on Linux with "invalid handle idx".
-    EventLoop::top_level(|wait_scope| {
-        let mut event_port = gjmio::EventPort::new().unwrap();
+    EventLoop::top_level(|wait_scope| -> Result<(), ::std::io::Error> {
+        let mut event_port = try!(gjmio::EventPort::new());
         let (stream1, stream2) = try!(unix::Stream::new_pair());
         let stream1_dupped = try!(stream1.try_clone());
         drop(stream1);
@@ -99,8 +99,8 @@ fn deregister_dupped_unix() {
 #[test]
 fn deregister_dupped_tcp() {
     // At one point, this panicked on Linux with "invalid handle idx".
-    EventLoop::top_level(|wait_scope| {
-        let mut event_port = gjmio::EventPort::new().unwrap();
+    EventLoop::top_level(|wait_scope| -> Result<(), ::std::io::Error> {
+        let mut event_port = try!(gjmio::EventPort::new());
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10002").unwrap();
         let listener = tcp::Listener::bind(addr).unwrap();
 

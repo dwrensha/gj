@@ -131,9 +131,9 @@ pub fn main() {
     }
     let buffer_pool = Rc::new(RefCell::new(BufferPool::new(1024, 64)));
 
-    EventLoop::top_level(move |wait_scope| {
+    EventLoop::top_level(move |wait_scope| -> Result<(), ::std::io::Error> {
         use std::net::ToSocketAddrs;
-        let mut event_port = gjmio::EventPort::new().unwrap();
+        let mut event_port = try!(gjmio::EventPort::new());
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(tcp::Listener::bind(addr));
         let reaper = Box::new(Reaper { buffer_pool: buffer_pool.clone() });

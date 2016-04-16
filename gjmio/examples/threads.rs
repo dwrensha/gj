@@ -76,7 +76,7 @@ fn parent_wait_loop() -> Promise<(), ::std::io::Error> {
 }
 
 pub fn main() {
-    gj::EventLoop::top_level(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| -> Result<(), Box<::std::error::Error>> {
         let mut event_port = gjmio::EventPort::new().unwrap();
         let children = vec![
             parent_wait_loop().lift::<Box<::std::error::Error>>(),

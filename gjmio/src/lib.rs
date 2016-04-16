@@ -59,8 +59,7 @@ extern crate gj;
 extern crate mio;
 extern crate nix;
 
-use std::cell::{Cell, RefCell};
-use std::rc::{Rc, Weak};
+use std::cell::{RefCell};
 use std::result::Result;
 use handle_table::{HandleTable, Handle};
 use gj::{Promise, PromiseFulfiller};
@@ -74,7 +73,7 @@ mod handle_table;
 
 thread_local!(static EVENT_PORT: RefCell<Option<EventPortImpl>> = RefCell::new(None));
 
-pub fn with_current_event_port<F, R>(f: F) -> R
+fn with_current_event_port<F, R>(f: F) -> R
     where F: FnOnce(&mut EventPortImpl) -> R
 {
     EVENT_PORT.with(|maybe_event_port_impl| {

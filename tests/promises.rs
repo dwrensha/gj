@@ -38,7 +38,7 @@ impl gj::EventPort<()> for EventPortImpl {
 fn eval_void() {
     use std::rc::Rc;
     use std::cell::Cell;
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
         let mut event_port = EventPortImpl;
         let done = Rc::new(Cell::new(false));
         let done1 = done.clone();
@@ -56,7 +56,7 @@ fn eval_void() {
 
 #[test]
 fn eval_int() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
         let mut event_port = EventPortImpl;
         let promise: Promise<u64, ()> =
             Promise::ok(19u64).map(|x| {

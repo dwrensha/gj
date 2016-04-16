@@ -288,8 +288,8 @@ pub struct EventLoop {
 impl EventLoop {
     /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
     /// closure and then drops the event loop.
-    pub fn top_level<F>(main: F) -> Result<(), Box<::std::error::Error>>
-        where F: FnOnce(&WaitScope) -> Result<(), Box<::std::error::Error>>,
+    pub fn top_level<T, E, F>(main: F) -> Result<T, E>
+        where F: FnOnce(&WaitScope) -> Result<T, E>,
     {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
         let dummy = private::EventNode { event: None, next: None, prev: None };

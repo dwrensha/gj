@@ -90,7 +90,7 @@ pub fn main() {
         return;
     }
 
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(), Box<::std::error::Error>> {
         let mut event_port = gjmio::EventPort::new().unwrap();
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(tcp::Listener::bind(addr));
