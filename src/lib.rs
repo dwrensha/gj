@@ -205,9 +205,10 @@ impl <T, E> Promise <T, E> {
     ///
     /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
     /// Waiting within event callbacks is disallowed.
-    pub fn wait<E1>(mut self, event_source: &mut EventPort<E1>) -> Result<T, E>
+    pub fn wait<E1>(mut self, wait_scope: &WaitScope, event_source: &mut EventPort<E1>) -> Result<T, E>
         where E: From<E1>
     {
+        drop(wait_scope);
         with_current_event_loop(move |event_loop| {
             let fired = ::std::rc::Rc::new(::std::cell::Cell::new(false));
             let done_event = BoolEvent::new(fired.clone());
@@ -228,6 +229,11 @@ impl <T, E> Promise <T, E> {
         })
     }
 }
+
+/// A scope in which asynchronous programming can occur. Corresponds to the top level scope
+/// of some [event loop](struct.EventLoop.html). Can be used to [wait](struct.Promise.html#method.wait)
+/// for the result of a promise.
+pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
 /// The result of `Promise::fork()`. Allows branches to be created. Dropping the `ForkedPromise`
 /// along with any branches created through `add_branch()` will cancel the computation.
@@ -288,7 +294,7 @@ impl EventLoop {
     /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
     /// closure and then drops the event loop.
     pub fn top_level<F>(main: F) -> Result<(), Box<::std::error::Error>>
-        where F: FnOnce() -> Result<(), Box<::std::error::Error>>,
+        where F: FnOnce(&WaitScope) -> Result<(), Box<::std::error::Error>>,
     {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
         let dummy = private::EventNode { event: None, next: None, prev: None };
@@ -310,7 +316,8 @@ impl EventLoop {
             *maybe_event_loop.borrow_mut() = Some(event_loop);
         });
 
-        let result = main();
+        let wait_scope = WaitScope(::std::marker::PhantomData);
+        let result = main(&wait_scope);
 
         EVENT_LOOP.with(move |maybe_event_loop| {
             let el = ::std::mem::replace(&mut *maybe_event_loop.borrow_mut(), None);
