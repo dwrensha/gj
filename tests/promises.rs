@@ -22,24 +22,14 @@
 #[macro_use]
 extern crate gj;
 
-use gj::{EventLoop, Promise};
-
-struct EventPortImpl;
-
-impl gj::EventPort<()> for EventPortImpl {
-    fn wait(&mut self) -> Result<bool, ()> {
-        Err(())
-    }
-
-    fn poll(&mut self) -> bool { unimplemented!() }
-}
+use gj::{EventLoop, Promise, ClosedEventPort};
 
 #[test]
 fn eval_void() {
     use std::rc::Rc;
     use std::cell::Cell;
     EventLoop::top_level(|wait_scope| -> Result<(), ()> {
-        let mut event_port = EventPortImpl;
+        let mut event_port = ClosedEventPort::new(());
         let done = Rc::new(Cell::new(false));
         let done1 = done.clone();
         let promise: Promise<(), ()> =
@@ -57,7 +47,7 @@ fn eval_void() {
 #[test]
 fn eval_int() {
     EventLoop::top_level(|wait_scope| -> Result<(), ()> {
-        let mut event_port = EventPortImpl;
+        let mut event_port = ClosedEventPort::new(());
         let promise: Promise<u64, ()> =
             Promise::ok(19u64).map(|x| {
                 assert_eq!(x, 19);

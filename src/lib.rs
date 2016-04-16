@@ -269,10 +269,30 @@ pub trait EventPort<E> {
     fn wake(&mut self) { unimplemented!(); }
 }
 
+/// An event port that never emits any events. On wait() it returns the error it was constructed with.
+pub struct ClosedEventPort<E: Clone> {
+    error: E,
+}
+
+impl <E: Clone> ClosedEventPort<E> {
+    pub fn new(error: E) -> ClosedEventPort<E> {
+        ClosedEventPort { error: error }
+    }
+}
+
+impl <E: Clone> EventPort<E> for ClosedEventPort<E> {
+    fn wait(&mut self) -> Result<bool, E> {
+        Err(self.error.clone())
+    }
+
+    fn poll(&mut self) -> bool {
+        false
+    }
+}
+
 /// A queue of events being executed in a loop on a single thread.
 pub struct EventLoop {
 //    daemons: TaskSetImpl,
-//    event_port: RefCell<Box<EventPort<E>>>,
     _running: bool,
     _last_runnable_state: bool,
     events: RefCell<handle_table::HandleTable<private::EventNode>>,
