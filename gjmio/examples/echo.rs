@@ -23,10 +23,11 @@
 //! initialization and uses them to serve up to N clients concurrently. When all buffers are in use,
 //! the server waits until the next buffer becomes available before accepting the next client
 //! connection.
-/*
-extern crate gj;
 
-use gj::io::{AsyncRead, AsyncWrite, Error, Slice, tcp};
+extern crate gj;
+extern crate gjmio;
+
+use gjmio::{AsyncRead, AsyncWrite, Error, Slice, tcp};
 use gj::{EventLoop, Promise, PromiseFulfiller, TaskReaper, TaskSet};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -121,9 +122,9 @@ fn accept_loop(listener: tcp::Listener,
         })
     })
 }
-*/
+
 pub fn main() {
-/*    let args: Vec<String> = ::std::env::args().collect();
+    let args: Vec<String> = ::std::env::args().collect();
     if args.len() != 2 {
         println!("usage: {} HOST:PORT", args[0]);
         return;
@@ -132,9 +133,10 @@ pub fn main() {
 
     EventLoop::top_level(move |wait_scope| {
         use std::net::ToSocketAddrs;
+        let mut event_port = gjmio::EventPort::new().unwrap();
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(tcp::Listener::bind(addr));
         let reaper = Box::new(Reaper { buffer_pool: buffer_pool.clone() });
-        accept_loop(listener, TaskSet::new(reaper), buffer_pool).lift().wait(wait_scope)
-    }).unwrap();*/
+        accept_loop(listener, TaskSet::new(reaper), buffer_pool).lift().wait(wait_scope, &mut event_port)
+    }).unwrap();
 }

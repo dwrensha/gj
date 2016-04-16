@@ -18,11 +18,13 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-/*
+
 #[macro_use]
 extern crate gj;
+extern crate gjmio;
+
 use std::net::ToSocketAddrs;
-use gj::io::{AsyncRead, AsyncWrite, Error, tcp};
+use gjmio::{AsyncRead, AsyncWrite, Error, tcp};
 use gj::{EventLoop, Promise};
 
 fn forward<R,W,B>(src: R, dst: W, buf: B) -> Promise<(R,W,B), Error<(R,W,B)>>
@@ -34,10 +36,10 @@ fn forward<R,W,B>(src: R, dst: W, buf: B) -> Promise<(R,W,B), Error<(R,W,B)>>
                 // EOF
                 Promise::ok((src, dst, buf))
             } else {
-                dst.write(gj::io::Slice::new(buf, n)).then_else(move |r| match r {
+                dst.write(gjmio::Slice::new(buf, n)).then_else(move |r| match r {
                     Ok((dst, slice)) => forward(src, dst, slice.buf),
                     Err(Error {state: (dst, slice), error}) =>
-                        Promise::err(gj::io::Error::new((src, dst, slice.buf), error))
+                        Promise::err(gjmio::Error::new((src, dst, slice.buf), error))
                 })
             }
         }
@@ -54,8 +56,8 @@ fn accept_loop(receiver: tcp::Listener,
     receiver.accept().lift().then(move |(receiver, src_stream)| {
         println!("handling connection");
 
-        gj::io::Timer.timeout_after(::std::time::Duration::from_secs(3),
-                                    tcp::Stream::connect(outbound_addr))
+        gjmio::Timer.timeout_after(::std::time::Duration::from_secs(3),
+                                   tcp::Stream::connect(outbound_addr))
            .then_else(move |r| match r {
                Ok(dst_stream) =>  {
                    let (src_reader, src_writer) = src_stream.split();
@@ -80,20 +82,21 @@ impl gj::TaskReaper<(), ::std::io::Error> for Reporter {
         println!("Task failed: {}", error);
     }
 }
-*/
+
 pub fn main() {
-/*    let args : Vec<String> = ::std::env::args().collect();
+    let args : Vec<String> = ::std::env::args().collect();
     if args.len() != 3 {
         println!("usage: {} <LISTEN_ADDR> <CONNECT_ADDR>", args[0]);
         return;
     }
 
     EventLoop::top_level(|wait_scope| {
+        let mut event_port = gjmio::EventPort::new().unwrap();
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let listener = try!(tcp::Listener::bind(addr));
 
         let outbound_addr = try!(args[2].to_socket_addrs()).next().expect("could not parse address");
         accept_loop(listener, outbound_addr,
-                    gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope)
-    }).unwrap(); */
+                    gj::TaskSet::new(Box::new(Reporter))).lift().wait(wait_scope, &mut event_port)
+    }).unwrap();
 }
