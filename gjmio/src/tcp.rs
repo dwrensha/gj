@@ -25,11 +25,11 @@ use std::result::Result;
 use std::rc::Rc;
 use std::cell::RefCell;
 use handle_table::{Handle};
-use ::io::{AsyncRead, AsyncWrite, try_read_internal, write_internal,
-           FdObserver, HasHandle, register_new_handle,
-           Error};
-use {Promise};
-use private::{with_current_event_loop};
+use {AsyncRead, AsyncWrite, try_read_internal, write_internal,
+     FdObserver, HasHandle, register_new_handle,
+     Error};
+use gj::Promise;
+use {with_current_event_port};
 
 pub struct Stream {
     stream: ::mio::tcp::TcpStream,
@@ -45,9 +45,9 @@ pub struct Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        with_current_event_loop(move |event_loop| {
-            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
-            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.listener);
+        with_current_event_port(move |event_port| {
+            event_port.handler.observers.remove(self.handle);
+            let _ = event_port.reactor.deregister(&self.listener);
         })
     }
 }
@@ -57,10 +57,10 @@ impl Listener {
         let listener = try!(::mio::tcp::TcpListener::bind(&addr));
         let handle = FdObserver::new();
 
-        with_current_event_loop(move |event_loop| {
-            try!(event_loop.event_port.borrow_mut().reactor.register(&listener, ::mio::Token(handle.val),
-                                                                     ::mio::EventSet::readable(),
-                                                                     ::mio::PollOpt::edge()));
+        with_current_event_port(move |event_port| {
+            try!(event_port.reactor.register(&listener, ::mio::Token(handle.val),
+                                             ::mio::EventSet::readable(),
+                                             ::mio::PollOpt::edge()));
             Ok(Listener { listener: listener, handle: handle, no_send: ::std::marker::PhantomData })
         })
     }
@@ -79,9 +79,8 @@ impl Listener {
                 Promise::ok((self, Stream::new(stream, handle)))
             }
             None => {
-                with_current_event_loop(move |event_loop| {
-                    let promise =
-                        event_loop.event_port.borrow_mut().handler.observers[self.handle].when_becomes_readable();
+                with_current_event_port(move |event_port| {
+                    let promise = event_port.handler.observers[self.handle].when_becomes_readable();
                     promise.then_else(move |r| match r {
                         Ok(()) => self.accept_internal(),
                         Err(e) => Promise::err(Error::new(self, e))
@@ -120,9 +119,9 @@ impl HasHandle for Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        with_current_event_loop(move |event_loop| {
-            event_loop.event_port.borrow_mut().handler.observers.remove(self.handle);
-            let _ = event_loop.event_port.borrow_mut().reactor.deregister(&self.stream);
+        with_current_event_port(move |event_port| {
+            event_port.handler.observers.remove(self.handle);
+            let _ = event_port.reactor.deregister(&self.stream);
         })
     }
 }
@@ -141,9 +140,8 @@ impl Stream {
 
             let handle = pry!(register_new_handle(&stream));
 
-            with_current_event_loop(move |event_loop| {
-                let promise =
-                    event_loop.event_port.borrow_mut().handler.observers[handle].when_becomes_writable();
+            with_current_event_port(move |event_port| {
+                let promise = event_port.handler.observers[handle].when_becomes_writable();
                 promise.map(move |()| {
                     try!(stream.take_socket_error());
                     Ok(Stream::new(stream, handle))

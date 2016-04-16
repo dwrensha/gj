@@ -23,9 +23,10 @@
 //!
 //! # Example
 //!
-//! ```
+//! 
+//! extern crate gj;
 //! use gj::{EventLoop, Promise};
-//! use gj::io::{AsyncRead, AsyncWrite, Slice, unix};
+//! use gjmio::{AsyncRead, AsyncWrite, Slice, unix};
 //!
 //! fn echo(stream: unix::Stream, buf: Vec<u8>) -> Promise<(), ::std::io::Error> {
 //!     stream.try_read(buf, 1).lift().then(move |(stream, buf, n)| {
@@ -51,18 +52,39 @@
 //!     try!(Promise::all(vec![promise1, promise2].into_iter()).wait(wait_scope));
 //!     Ok(())
 //! }).expect("top level");
-//! ```
+//! 
 
+#[macro_use]
+extern crate gj;
+extern crate mio;
+extern crate nix;
 
+use std::cell::{Cell, RefCell};
+use std::rc::{Rc, Weak};
 use std::result::Result;
 use handle_table::{HandleTable, Handle};
-use {EventPort, Promise, PromiseFulfiller};
-use private::{with_current_event_loop};
+use gj::{Promise, PromiseFulfiller};
 
 pub mod tcp;
 
 #[cfg(unix)]
 pub mod unix;
+
+mod handle_table;
+
+thread_local!(static EVENT_PORT: RefCell<Option<EventPortImpl>> = RefCell::new(None));
+
+pub fn with_current_event_port<F, R>(f: F) -> R
+    where F: FnOnce(&mut EventPortImpl) -> R
+{
+    EVENT_PORT.with(|maybe_event_port_impl| {
+        match *maybe_event_port_impl.borrow_mut() {
+            None => panic!("current thread has no event loop"),
+            Some(ref mut event_port) => f(event_port),
+        }
+    })
+}
+
 
 /// A `::std::io::Error` that also carries along some state. Useful for tasks from which you want to
 /// return the state in both the error and the success cases, like `Promise<S, Error<S>>`.
@@ -141,14 +163,14 @@ impl <T> AsRef<[u8]> for Slice<T> where T: AsRef<[u8]> {
 fn register_new_handle<E>(evented: &E) -> Result<Handle, ::std::io::Error> where E: ::mio::Evented {
     let handle = FdObserver::new();
     let token = ::mio::Token(handle.val);
-    return with_current_event_loop(move |event_loop| {
-        try!(event_loop.event_port.borrow_mut().reactor.register(evented, token,
-                                                                 ::mio::EventSet::writable() |
-                                                                 ::mio::EventSet::readable(),
-                                                                 ::mio::PollOpt::edge()));
+    with_current_event_port(move |event_port| {
+        try!(event_port.reactor.register(evented, token,
+                                         ::mio::EventSet::writable() |
+                                         ::mio::EventSet::readable(),
+                                         ::mio::PollOpt::edge()));
         // XXX if this fails, the handle does not get cleaned up.
-        return Ok(handle);
-    });
+        Ok(handle)
+    })
 }
 
 trait HasHandle {
@@ -176,10 +198,9 @@ fn try_read_internal<R, T>(mut reader: R,
                 if e.kind() != ::std::io::ErrorKind::WouldBlock {
                     return Promise::err(Error::new((reader, buf), e))
                 } else {
-                    return with_current_event_loop(move |event_loop| {
+                    return with_current_event_port(move |event_port| {
                         let promise =
-                            event_loop.event_port.borrow_mut()
-                            .handler.observers[reader.get_handle()].when_becomes_readable();
+                            event_port.handler.observers[reader.get_handle()].when_becomes_readable();
                         promise.then_else(move |r| match r {
                             Ok(()) => try_read_internal(reader, buf, already_read, min_bytes),
                             Err(e) => Promise::err(Error::new((reader, buf), e))
@@ -209,10 +230,9 @@ fn write_internal<W, T>(mut writer: W,
                 if e.kind() != ::std::io::ErrorKind::WouldBlock {
                     return Promise::err(Error::new((writer, buf), e))
                 } else {
-                    return with_current_event_loop(move |event_loop| {
+                    return with_current_event_port(move |event_port| {
                         let promise =
-                            event_loop.event_port.borrow_mut()
-                            .handler.observers[writer.get_handle()].when_becomes_writable();
+                            event_port.handler.observers[writer.get_handle()].when_becomes_writable();
                         promise.then_else(move |r| match r {
                             Ok(()) => write_internal(writer, buf, already_written),
                             Err(e) => Promise::err(Error::new((writer, buf), e))
@@ -233,10 +253,9 @@ struct FdObserver {
 
 impl FdObserver {
     pub fn new() -> Handle {
-        with_current_event_loop(move |event_loop| {
+        with_current_event_port(move |event_port| {
 
             let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
-            let event_port = &mut *event_loop.event_port.borrow_mut();
             return event_port.handler.observers.push(observer);
         })
     }
@@ -254,21 +273,32 @@ impl FdObserver {
     }
 }
 
-#[doc(hidden)]
-pub struct MioEventPort {
+
+struct EventPortImpl {
     handler: Handler,
     reactor: ::mio::EventLoop<Handler>,
+}
+
+pub struct EventPort {
+    _private: ::std::marker::PhantomData<()>,
 }
 
 struct Handler {
     observers: HandleTable<FdObserver>,
 }
 
-impl MioEventPort {
-    pub fn new() -> Result<MioEventPort, ::std::io::Error> {
-        Ok(MioEventPort {
+impl EventPort {
+    pub fn new() -> Result<EventPort, ::std::io::Error> {
+        let event_port_impl = EventPortImpl {
             handler: Handler { observers: HandleTable::new() },
             reactor: try!(::mio::EventLoop::new()),
+        };
+        EVENT_PORT.with(move |maybe_event_port| {
+            assert!(maybe_event_port.borrow().is_none());
+            *maybe_event_port.borrow_mut() = Some(event_port_impl);
+        });
+        Ok(EventPort {
+            _private: ::std::marker::PhantomData,
         })
     }
 }
@@ -300,15 +330,20 @@ impl ::mio::Handler for Handler {
     }
 }
 
-impl EventPort for MioEventPort {
-    fn wait(&mut self) -> bool {
-        self.reactor.run_once(&mut self.handler, None).unwrap();
-        false
+impl gj::EventPort<::std::io::Error> for EventPort {
+    fn wait(&mut self) -> Result<bool, ::std::io::Error> {
+        let result: Result<(), ::std::io::Error> = with_current_event_port(move |event_port| {
+            event_port.reactor.run_once(&mut event_port.handler, None)
+        });
+        try!(result);
+        Ok(false)
     }
 
     fn poll(&mut self) -> bool {
-        self.reactor.run_once(&mut self.handler, None).unwrap();
-        false
+        unimplemented!()
+        // ??
+//        self.reactor.run_once(&mut self.handler, None).unwrap();
+//        false
     }
 }
 
@@ -319,16 +354,17 @@ impl Timer {
         let delay_ms = (delay.as_secs() * 1000) + (delay.subsec_nanos() as u64 / 1_000_000);
         let (promise, fulfiller) = Promise::and_fulfiller();
         let timeout = Timeout { fulfiller: fulfiller };
-        with_current_event_loop(move |event_loop| {
-            let handle = match event_loop.event_port.borrow_mut().reactor.timeout_ms(timeout, delay_ms) {
+        with_current_event_port(move |event_port| {
+            let handle = match event_port.reactor.timeout_ms(timeout, delay_ms) {
                 Ok(v) => v,
                 Err(_) => return Promise::err(::std::io::Error::new(::std::io::ErrorKind::Other,
                                                                     "mio timer error"))
             };
-            Promise {
-                node: Box::new(
-                    ::private::promise_node::Wrapper::new(promise.node,
-                                                          TimeoutDropper { handle: handle })) }
+            unimplemented!()
+//            Promise {
+//                node: Box::new(
+//                    ::private::promise_node::Wrapper::new(promise.node,
+//                                                          TimeoutDropper { handle: handle })) }
         })
     }
 
@@ -347,8 +383,8 @@ struct TimeoutDropper {
 
 impl Drop for TimeoutDropper {
     fn drop(&mut self) {
-        with_current_event_loop(move |event_loop| {
-            event_loop.event_port.borrow_mut().reactor.clear_timeout(self.handle);
+        with_current_event_port(move |event_port| {
+            event_port.reactor.clear_timeout(self.handle);
         });
     }
 }
@@ -356,3 +392,4 @@ impl Drop for TimeoutDropper {
 struct Timeout {
     fulfiller: PromiseFulfiller<(), ::std::io::Error>,
 }
+

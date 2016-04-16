@@ -47,9 +47,6 @@
 //!
 
 
-extern crate mio;
-extern crate nix;
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::result::Result;
@@ -71,8 +68,6 @@ macro_rules! pry {
         }
     })
 }
-
-//pub mod io;
 
 mod private;
 mod handle_table;

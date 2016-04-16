@@ -18,16 +18,17 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-/*
+
 #[macro_use]
 extern crate gj;
+extern crate gjmio;
 use gj::{EventLoop, Promise};
-use gj::io::{AsyncRead, AsyncWrite, tcp};
+use gjmio::{AsyncRead, AsyncWrite, tcp};
 
 #[test]
 fn hello() {
     EventLoop::top_level(|wait_scope| {
-
+        let mut event_port = gjmio::EventPort::new().unwrap();
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10000").unwrap();
         let listener = tcp::Listener::bind(addr).unwrap();
 
@@ -39,7 +40,7 @@ fn hello() {
             stream.read(vec![0u8; 6], 6).lift()
         });
 
-        let (_, buf, _) = read_promise.wait(wait_scope).unwrap();
+        let (_, buf, _) = read_promise.wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(&buf[..], [0,1,2,3,4,5]);
         Ok(())
@@ -49,7 +50,7 @@ fn hello() {
 #[test]
 fn echo() {
     EventLoop::top_level(|wait_scope| {
-
+        let mut event_port = gjmio::EventPort::new().unwrap();
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10001").unwrap();
         let listener = tcp::Listener::bind(addr).unwrap();
 
@@ -69,7 +70,7 @@ fn echo() {
             })
         });
 
-        let (_, buf, _) = client_promise.wait(wait_scope).unwrap();
+        let (_, buf, _) = client_promise.wait(wait_scope, &mut event_port).unwrap();
         assert_eq!(&buf[..], [8,7,6,5,4,3]);
         Ok(())
     }).unwrap();
@@ -78,9 +79,10 @@ fn echo() {
 #[cfg(unix)]
 #[test]
 fn deregister_dupped_unix() {
-    use gj::io::unix;
+    use gjmio::unix;
     // At one point, this panicked on Linux with "invalid handle idx".
     EventLoop::top_level(|wait_scope| {
+        let mut event_port = gjmio::EventPort::new().unwrap();
         let (stream1, stream2) = try!(unix::Stream::new_pair());
         let stream1_dupped = try!(stream1.try_clone());
         drop(stream1);
@@ -88,7 +90,7 @@ fn deregister_dupped_unix() {
         let promise1 = stream1_dupped.read(vec![0u8; 6], 6);
         let _promise2 = stream2.write(vec![1,2,3,4,5,6]);
 
-        let _ = promise1.wait(wait_scope);
+        let _ = promise1.lift::<::std::io::Error>().wait(wait_scope, &mut event_port);
         Ok(())
     }).unwrap();
 }
@@ -98,6 +100,7 @@ fn deregister_dupped_unix() {
 fn deregister_dupped_tcp() {
     // At one point, this panicked on Linux with "invalid handle idx".
     EventLoop::top_level(|wait_scope| {
+        let mut event_port = gjmio::EventPort::new().unwrap();
         let addr = ::std::str::FromStr::from_str("127.0.0.1:10002").unwrap();
         let listener = tcp::Listener::bind(addr).unwrap();
 
@@ -117,8 +120,8 @@ fn deregister_dupped_tcp() {
             promise2.then(|_| promise1)
         });
 
-        let _ = promise.wait(wait_scope);
+        let _ = promise.wait(wait_scope, &mut event_port);
         Ok(())
     }).unwrap();
 }
-*/
+
