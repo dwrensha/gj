@@ -79,7 +79,7 @@ impl <T> HandleTable<T> {
     }
 
     // Returns the number of currently active handles in the table.
-    pub fn len(&self) -> usize {
+    pub fn _len(&self) -> usize {
         self.num_active
     }
 }

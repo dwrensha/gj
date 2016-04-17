@@ -354,16 +354,10 @@ impl Timer {
         let (promise, fulfiller) = Promise::and_fulfiller();
         let timeout = Timeout { fulfiller: fulfiller };
         with_current_event_port(move |event_port| {
-            let handle = match event_port.reactor.timeout_ms(timeout, delay_ms) {
-                Ok(v) => v,
-                Err(_) => return Promise::err(::std::io::Error::new(::std::io::ErrorKind::Other,
-                                                                    "mio timer error"))
-            };
-            unimplemented!()
-//            Promise {
-//                node: Box::new(
-//                    ::private::promise_node::Wrapper::new(promise.node,
-//                                                          TimeoutDropper { handle: handle })) }
+            let handle = pry!(event_port.reactor.timeout_ms(timeout, delay_ms)
+                              .map_err(|_| ::std::io::Error::new(::std::io::ErrorKind::Other,
+                                                                    "mio timer error")));
+            promise.attach(TimeoutDropper { handle: handle })
         })
     }
 
