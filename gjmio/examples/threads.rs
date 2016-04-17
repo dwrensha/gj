@@ -49,8 +49,7 @@ fn child_loop(delay: Duration,
 }
 
 fn child(delay: Duration) -> Result<unix::Stream, Box<::std::error::Error>> {
-    let (_, stream) = try!(unix::spawn(move |parent_stream, wait_scope| {
-        let mut event_port = gjmio::EventPort::new().unwrap(); // XXX?
+    let (_, stream) = try!(unix::spawn(move |parent_stream, wait_scope, mut event_port| {
         try!(child_loop(delay, parent_stream, vec![0u8]).lift::<Box<::std::error::Error>>().wait(wait_scope, &mut event_port));
         Ok(())
     }));

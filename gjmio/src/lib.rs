@@ -78,7 +78,7 @@ fn with_current_event_port<F, R>(f: F) -> R
 {
     EVENT_PORT.with(|maybe_event_port_impl| {
         match *maybe_event_port_impl.borrow_mut() {
-            None => panic!("current thread has no event loop"),
+            None => panic!("current thread has no event port"),
             Some(ref mut event_port) => f(event_port),
         }
     })

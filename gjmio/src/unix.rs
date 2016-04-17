@@ -203,7 +203,7 @@ impl AsyncWrite for Stream {
 /// Passes one of the sockets to the thread's start function and returns the other socket.
 /// The new thread will already have an active event loop when `start_func` is called.
 pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream), Box<::std::error::Error>>
-    where F: FnOnce(Stream, &WaitScope) -> Result<(), Box<::std::error::Error>>,
+    where F: FnOnce(Stream, &WaitScope, ::EventPort) -> Result<(), Box<::std::error::Error>>,
           F: Send + 'static
 {
     use nix::sys::socket::{socketpair, AddressFamily, SockType, SOCK_CLOEXEC, SOCK_NONBLOCK};
@@ -216,8 +216,9 @@ pub fn spawn<F>(start_func: F) -> Result<(::std::thread::JoinHandle<()>, Stream)
 
     let join_handle = ::std::thread::spawn(move || {
         let _result = EventLoop::top_level(move |wait_scope| {
+            let event_port = try!(::EventPort::new());
             let socket_stream = try!(unsafe { Stream::from_raw_fd(fd1) });
-            start_func(socket_stream, &wait_scope)
+            start_func(socket_stream, &wait_scope, event_port)
         });
     });
 
