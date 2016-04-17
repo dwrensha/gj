@@ -252,21 +252,7 @@ impl <T, E> ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
 /// Interface between an `EventLoop` and events originating from outside of the loop's thread.
 pub trait EventPort<E> {
     /// Waits for an external event to arrive, sleeping if necessary.
-    /// Returns true if wake() has been called from another thread.
-    fn wait(&mut self) -> Result<bool, E>;
-
-    /// Checks whether any external events have arrived, but does not sleep.
-    /// Returns true if wake() has been called from another thread.
-    fn poll(&mut self) -> bool;
-
-    /// Called to notify the `EventPort` when the `EventLoop` has work to do; specifically when it
-    /// transitions from empty -> runnable or runnable -> empty. This is typically useful when
-    /// integrating with an external event loop; if the loop is currently runnable then you should
-    /// arrange to call run() on it soon. The default implementation does nothing.
-    fn set_runnable(&mut self, _runnable: bool) { }
-
-
-    fn wake(&mut self) { unimplemented!(); }
+    fn wait(&mut self) -> Result<(), E>;
 }
 
 /// An event port that never emits any events. On wait() it returns the error it was constructed with.
@@ -281,12 +267,8 @@ impl <E: Clone> ClosedEventPort<E> {
 }
 
 impl <E: Clone> EventPort<E> for ClosedEventPort<E> {
-    fn wait(&mut self) -> Result<bool, E> {
+    fn wait(&mut self) -> Result<(), E> {
         Err(self.error.clone())
-    }
-
-    fn poll(&mut self) -> bool {
-        false
     }
 }
 

@@ -4,6 +4,9 @@ extern crate mio;
 extern crate nix;
 
 use gj::{Promise, PromiseFulfiller};
+use handle_table::{HandleTable, Handle};
+
+mod handle_table;
 
 /// A nonblocking input bytestream.
 pub trait Read {
@@ -35,3 +38,56 @@ pub trait AsyncWrite {
     fn write<T: AsRef<[u8]>>(&mut self, buf: T) -> Promise<T, ::std::io::Error>;
 }
 
+
+struct FdObserver {
+    read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
+    write_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
+}
+
+
+pub struct EventPort {
+    handler: Handler,
+    reactor: ::mio::EventLoop<Handler>,
+}
+
+impl gj::EventPort<::std::io::Error> for EventPort {
+    fn wait(&mut self) -> Result<(), ::std::io::Error> {
+        self.reactor.run_once(&mut self.handler, None)
+    }
+}
+
+
+struct Handler {
+    observers: HandleTable<FdObserver>,
+}
+
+impl ::mio::Handler for Handler {
+    type Timeout = Timeout;
+    type Message = ();
+    fn ready(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
+             token: ::mio::Token, events: ::mio::EventSet) {
+        if events.is_readable() {
+            match ::std::mem::replace(&mut self.observers[Handle {val: token.0}].read_fulfiller, None) {
+                Some(fulfiller) => {
+                    fulfiller.fulfill(())
+                }
+                None => {
+                    ()
+                }
+            }
+        }
+        if events.is_writable() {
+            match ::std::mem::replace(&mut self.observers[Handle { val: token.0}].write_fulfiller, None) {
+                Some(fulfiller) => fulfiller.fulfill(()),
+                None => (),
+            }
+        }
+    }
+    fn timeout(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, timeout: Timeout) {
+        timeout.fulfiller.fulfill(());
+    }
+}
+
+struct Timeout {
+    fulfiller: PromiseFulfiller<(), ::std::io::Error>,
+}

@@ -330,19 +330,12 @@ impl ::mio::Handler for Handler {
 }
 
 impl gj::EventPort<::std::io::Error> for EventPort {
-    fn wait(&mut self) -> Result<bool, ::std::io::Error> {
+    fn wait(&mut self) -> Result<(), ::std::io::Error> {
         let result: Result<(), ::std::io::Error> = with_current_event_port(move |event_port| {
             event_port.reactor.run_once(&mut event_port.handler, None)
         });
         try!(result);
-        Ok(false)
-    }
-
-    fn poll(&mut self) -> bool {
-        unimplemented!()
-        // ??
-//        self.reactor.run_once(&mut self.handler, None).unwrap();
-//        false
+        Ok(())
     }
 }
 
