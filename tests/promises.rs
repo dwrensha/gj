@@ -59,10 +59,10 @@ fn eval_int() {
     }).unwrap();
 }
 
-/*
 #[test]
 fn fulfiller() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
+        let mut event_port = ClosedEventPort::new(());
         let (promise, fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let p1 = promise.map(|x| {
             assert_eq!(x, 10);
@@ -70,7 +70,7 @@ fn fulfiller() {
         });
 
         fulfiller.fulfill(10);
-        let value = p1.wait(wait_scope).unwrap();
+        let value = p1.wait(wait_scope, &mut event_port).unwrap();
         assert_eq!(value, 11);
         Ok(())
     }).unwrap();
@@ -78,10 +78,11 @@ fn fulfiller() {
 
 #[test]
 fn reject_fulfiller() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
         fulfiller.reject(());
-        let value = promise.wait(wait_scope);
+        let value = promise.wait(wait_scope, &mut event_port);
         assert_eq!(value, Err(()));
         Ok(())
     }).unwrap();
@@ -89,9 +90,10 @@ fn reject_fulfiller() {
 
 #[test]
 fn drop_fulfiller() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let (promise, _) = Promise::<(), ()>::and_fulfiller();
-        let value = promise.wait(wait_scope);
+        let value = promise.wait(wait_scope, &mut event_port);
         assert_eq!(value, Err(()));
         Ok(())
     }).unwrap();
@@ -99,8 +101,8 @@ fn drop_fulfiller() {
 
 #[test]
 fn chain() {
-    EventLoop::top_level(|wait_scope| {
-
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
+        let mut event_port = ClosedEventPort::new(());
         let promise: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(123) });
         let promise2: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(321) });
 
@@ -110,7 +112,7 @@ fn chain() {
             })
         });
 
-        let value = promise3.wait(wait_scope).unwrap();
+        let value = promise3.wait(wait_scope, &mut event_port).unwrap();
         assert_eq!(444, value);
         Ok(())
     }).unwrap();
@@ -118,8 +120,8 @@ fn chain() {
 
 #[test]
 fn chain_error() {
-    EventLoop::top_level(|wait_scope| {
-
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new("EVENT PORT CLOSED");
         let promise = Promise::ok(()).map(|()| { Ok("123") });
         let promise2: Promise<&'static str, Box<::std::error::Error>> =
             Promise::ok(()).map(|()| { Ok("XXX321") });
@@ -132,15 +134,15 @@ fn chain_error() {
             })
         });
 
-        assert!(promise3.wait(wait_scope).is_err());
+        assert!(promise3.wait(wait_scope, &mut event_port).is_err());
         Ok(())
     }).unwrap();
 }
 
 #[test]
 fn deep_chain2() {
-    EventLoop::top_level(|wait_scope| {
-
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let mut promise: Promise<u32, ()> = Promise::ok(4u32);
 
         for _ in 0..1000 {
@@ -149,7 +151,7 @@ fn deep_chain2() {
             });
         }
 
-        let value = promise.wait(wait_scope).unwrap();
+        let value = promise.wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(value, 4);
         Ok(())
@@ -158,15 +160,16 @@ fn deep_chain2() {
 
 #[test]
 fn separate_fulfiller_chained() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let (promise, fulfiller) = Promise::<Promise<i32, ()>, ()>::and_fulfiller();
         let (inner_promise, inner_fulfiller) = Promise::<i32, ()>::and_fulfiller();
 
         fulfiller.fulfill(inner_promise);
         inner_fulfiller.fulfill(123);
 
-        let value = promise.wait(wait_scope).unwrap()
-            .wait(wait_scope).unwrap(); // KJ gets away with only one wait() here.
+        let value = promise.wait(wait_scope, &mut event_port).unwrap()
+            .wait(wait_scope, &mut event_port).unwrap(); // KJ gets away with only one wait() here.
         assert_eq!(value, 123);
         Ok(())
     }).unwrap();
@@ -177,7 +180,8 @@ fn ordering() {
     use std::rc::Rc;
     use std::cell::{Cell, RefCell};
 
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
 
         let counter = Rc::new(Cell::new(0u32));
         let (counter0, counter1, counter2, counter3, counter4, counter5, counter6) =
@@ -251,7 +255,7 @@ fn ordering() {
             match maybe_p {
                 None => {}
                 Some(p) => {
-                    p.wait(wait_scope).unwrap()
+                    p.wait(wait_scope, &mut event_port).unwrap()
                 }
             }
         }
@@ -264,7 +268,7 @@ fn ordering() {
 #[test]
 fn drop_depth_first_insertion_point() {
     // At one point, this triggered an "invalid handle idx" panic.
-    EventLoop::top_level(|_wait_scope| {
+    EventLoop::top_level(|_wait_scope| -> Result<(),()> {
         let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
         let promise = Promise::all(vec![promise].into_iter());
         drop(fulfiller);
@@ -282,7 +286,8 @@ fn drop_depth_first_insertion_point() {
 #[test]
 fn drop_tail() {
     // At one point, this failed to terminate.
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
 
         let mut fork = promise.fork();
@@ -301,7 +306,7 @@ fn drop_tail() {
         drop(branch1);
         drop(branch2);
 
-        promise1.wait(wait_scope).unwrap();
+        promise1.wait(wait_scope, &mut event_port).unwrap();
         Ok(())
     }).unwrap();
 }
@@ -329,7 +334,8 @@ impl gj::TaskReaper<(), ()> for TaskReaperImpl {
 #[test]
 #[allow(unused_must_use)]
 fn task_set() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let reaper = TaskReaperImpl::new();
         let error_count = reaper.get_error_count();
         let mut tasks = gj::TaskSet::new(Box::new(reaper));
@@ -351,7 +357,7 @@ fn task_set() {
             panic!("Promise without waiter shouldn't execute.");
         });
 
-        gj::Promise::<(), ()>::ok(()).map(|()| { Ok(()) } ).wait(wait_scope).unwrap();
+        gj::Promise::<(), ()>::ok(()).map(|()| { Ok(()) } ).wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(error_count.get(), 1);
         Ok(())
@@ -360,12 +366,13 @@ fn task_set() {
 
 #[test]
 fn drop_task_set() {
-    gj::EventLoop::top_level(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
         let panicker = Promise::ok(()).map(|()| { unreachable!() });
         tasks.add(panicker);
         drop(tasks);
-        Promise::<(), ()>::ok(()).map(|()| { Ok(()) } ).wait(wait_scope).unwrap();
+        Promise::<(), ()>::ok(()).map(|()| { Ok(()) } ).wait(wait_scope, &mut event_port).unwrap();
         Ok(())
     }).unwrap();
 }
@@ -373,7 +380,7 @@ fn drop_task_set() {
 #[test]
 fn drop_task_set_leak() {
     // At one point, this caused a "leaked events" panic.
-    EventLoop::top_level(|_wait_scope| {
+    EventLoop::top_level(|_wait_scope| -> Result<(),()> {
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
         tasks.add(Promise::never_done());
         Ok(())
@@ -382,14 +389,15 @@ fn drop_task_set_leak() {
 
 #[test]
 fn array_join_simple() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let promises: Vec<Promise<u32, ()>> =
             vec![Promise::ok(123),
                  Promise::ok(456),
                  Promise::ok(789)];
 
         let promise = Promise::all(promises.into_iter());
-        let result = promise.wait(wait_scope).unwrap();
+        let result = promise.wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(result.len(), 3);
         assert_eq!(result[0], 123);
@@ -401,10 +409,11 @@ fn array_join_simple() {
 
 #[test]
 fn array_join_empty() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let promises: Vec<Promise<(), ()>> = Vec::new();
         let promise = Promise::all(promises.into_iter());
-        let result = promise.wait(wait_scope).unwrap();
+        let result = promise.wait(wait_scope, &mut event_port).unwrap();
         assert_eq!(result.len(), 0);
         Ok(())
     }).unwrap();
@@ -414,7 +423,8 @@ fn array_join_empty() {
 fn array_join_ordering() {
     use std::rc::Rc;
     use std::cell::Cell;
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let bad_thing_happened = Rc::new(Cell::new(false));
 
         let (p1, _f1) = Promise::and_fulfiller();
@@ -445,7 +455,7 @@ fn array_join_ordering() {
 
         f2.reject(());
 
-        assert_eq!(promise.wait(wait_scope), Err(()));
+        assert_eq!(promise.wait(wait_scope, &mut event_port), Err(()));
         assert_eq!(bad_thing_happened.get(), false);
 
         Ok(())
@@ -455,7 +465,8 @@ fn array_join_ordering() {
 
 #[test]
 fn array_join_drop_then_fulfill() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let (p, fulfiller) = Promise::<(), ()>::and_fulfiller();
         let p1: Promise<(),()> = p.map(|()| { panic!("this should never execute.") });
         let promises = vec![p1];
@@ -465,7 +476,7 @@ fn array_join_drop_then_fulfill() {
 
         // Get the event loop turning.
         let wait_promise: Promise<(),()> = Promise::ok(()).then(|()| Promise::ok(()));
-        wait_promise.wait(wait_scope).unwrap();
+        wait_promise.wait(wait_scope, &mut event_port).unwrap();
 
         Ok(())
     }).unwrap();
@@ -473,30 +484,34 @@ fn array_join_drop_then_fulfill() {
 
 #[test]
 fn exclusive_join() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
+
         let left = Promise::ok(()).map(|()| {
             return Ok(123);
         });
         let (right, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
-        let result = left.exclusive_join(right).wait(wait_scope).unwrap();
+        let result = left.exclusive_join(right).wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(result, 123);
         Ok(())
     }).unwrap();
 
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let (left, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let right = Promise::ok(()).map(|()| {
             return Ok(456);
         });
 
-        let result = left.exclusive_join(right).wait(wait_scope).unwrap();
+        let result = left.exclusive_join(right).wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(result, 456);
         Ok(())
     }).unwrap();
 
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
+        let mut event_port = ClosedEventPort::new(());
         let left: Promise<u32, ()> = Promise::ok(()).map(|()| {
             Ok(123)
         });
@@ -504,7 +519,7 @@ fn exclusive_join() {
             Ok(456)
         }); // need to eagerly evaluate?
 
-        let _result = left.exclusive_join(right).wait(wait_scope).unwrap();
+        let _result = left.exclusive_join(right).wait(wait_scope, &mut event_port).unwrap();
 
 //        assert_eq!(result, 456);
         Ok(())
@@ -524,8 +539,9 @@ fn simple_recursion() {
         })
     }
 
-    EventLoop::top_level(|wait_scope| {
-        Ok(foo(100000).wait(wait_scope).unwrap())
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
+        let mut event_port = ClosedEventPort::new(());
+        Ok(foo(100000).wait(wait_scope, &mut event_port).unwrap())
     }).unwrap();
 }
 
@@ -548,18 +564,20 @@ fn task_set_recursion() {
         })
     }
 
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
+        let mut event_port = ClosedEventPort::new(());
         let mut tasks = gj::TaskSet::new(Box::new(TaskReaperImpl::new()));
         let (promise, fulfiller) = Promise::and_fulfiller();
         tasks.add(foo(2, Some(fulfiller)));
-        promise.wait(wait_scope).unwrap();
+        promise.wait(wait_scope, &mut event_port).unwrap();
         Ok(())
     }).unwrap();
 }
 
 #[test]
 fn fork_simple() {
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let promise: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(123) });
         let mut fork = promise.fork();
         let branch1 = fork.add_branch().map(|i| {
@@ -576,8 +594,8 @@ fn fork_simple() {
         drop(fork);
         drop(branch3);
 
-        assert_eq!(456, branch1.wait(wait_scope).unwrap());
-        assert_eq!(789, branch2.wait(wait_scope).unwrap());
+        assert_eq!(456, branch1.wait(wait_scope, &mut event_port).unwrap());
+        assert_eq!(789, branch2.wait(wait_scope, &mut event_port).unwrap());
         Ok(())
     }).unwrap();
 }
@@ -587,7 +605,8 @@ fn fork_cancel() {
     use ::std::rc::Rc;
     use ::std::cell::Cell;
 
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let bad_thing_happened = Rc::new(Cell::new(false));
 
         let bad_thing_happened1 = bad_thing_happened.clone();
@@ -604,7 +623,7 @@ fn fork_cancel() {
 
         // Get the event loop turning.
         let wait_promise: Promise<(),()> = Promise::ok(()).then(|()| Promise::ok(()));
-        wait_promise.wait(wait_scope).unwrap();
+        wait_promise.wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(false, bad_thing_happened.get());
         Ok(())
@@ -613,17 +632,18 @@ fn fork_cancel() {
 
 #[test]
 fn fork_branch_after_resolve() {
-    gj::EventLoop::top_level(|wait_scope| {
+    gj::EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let promise: Promise<(), ()> = Promise::ok(()).then(move |()| {
             Promise::ok(())
         });
         let mut fork = promise.fork();
         let branch = fork.add_branch();
 
-        assert!(branch.wait(wait_scope).is_ok());
+        assert!(branch.wait(wait_scope, &mut event_port).is_ok());
 
         let branch1 = fork.add_branch();
-        assert!(branch1.wait(wait_scope).is_ok());
+        assert!(branch1.wait(wait_scope, &mut event_port).is_ok());
 
         Ok(())
     }).unwrap();
@@ -633,7 +653,8 @@ fn fork_branch_after_resolve() {
 fn knotty() {
     use std::rc::Rc;
     use std::cell::RefCell;
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let maybe_promise = Rc::new(RefCell::new(None));
         let maybe_promise2 = maybe_promise.clone();
 
@@ -648,7 +669,7 @@ fn knotty() {
 
         // Get the event loop turning.
         let wait_promise: Promise<(),()> = Promise::ok(());
-        wait_promise.wait(wait_scope).unwrap();
+        wait_promise.wait(wait_scope, &mut event_port).unwrap();
         Ok(())
     }).unwrap()
 }
@@ -658,7 +679,8 @@ fn task_set_drop_self() {
     // At one point, this panicked with "dangling reference to tasks?"
     use std::rc::Rc;
     use std::cell::RefCell;
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let tasks = Rc::new(RefCell::new(gj::TaskSet::new(Box::new(TaskReaperImpl::new()))));
 
         let (promise, fulfiller) = Promise::<(),()>::and_fulfiller();
@@ -667,7 +689,7 @@ fn task_set_drop_self() {
 
         drop(tasks);
         fulfiller.fulfill(());
-        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope, &mut event_port).unwrap();
         Ok(())
     }).expect("top level");
 }
@@ -678,21 +700,21 @@ fn eagerly_evaluate() {
     use std::rc::Rc;
     use std::cell::Cell;
 
-    EventLoop::top_level(|wait_scope| {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
         let called: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let called1 = called.clone();
         let mut promise: Promise<(),()> = Promise::ok(()).map(move |()| {
             called1.set(true);
             Ok(())
         });
-        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope, &mut event_port).unwrap();
         assert_eq!(false, called.get());
 
         promise = promise.eagerly_evaluate();
-        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope).unwrap();
+        Promise::<(),()>::ok(()).map(|()|{Ok(())}).wait(wait_scope, &mut event_port).unwrap();
 
         assert_eq!(true, called.get());
         Ok(())
     }).unwrap();
 }
-*/
