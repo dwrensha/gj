@@ -76,14 +76,20 @@ fn fulfiller() {
     }).unwrap();
 }
 
+#[derive(PartialEq, Eq, Clone, Debug)]
+enum FulfillerError { Dropped, Rejected, NeverFulfilled }
+impl gj::FulfillerDropped for FulfillerError {
+    fn fulfiller_dropped() -> FulfillerError { FulfillerError::Dropped }
+}
+
 #[test]
 fn reject_fulfiller() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
-        let mut event_port = ClosedEventPort::new(());
-        let (promise, fulfiller) = Promise::<(), ()>::and_fulfiller();
-        fulfiller.reject(());
+        let mut event_port = ClosedEventPort::new(FulfillerError::NeverFulfilled);
+        let (promise, fulfiller) = Promise::<(), FulfillerError>::and_fulfiller();
+        fulfiller.reject(FulfillerError::Rejected);
         let value = promise.wait(wait_scope, &mut event_port);
-        assert_eq!(value, Err(()));
+        assert_eq!(value, Err(FulfillerError::Rejected));
         Ok(())
     }).unwrap();
 }
@@ -91,21 +97,21 @@ fn reject_fulfiller() {
 #[test]
 fn drop_fulfiller() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
-        let mut event_port = ClosedEventPort::new(());
-        let (promise, _) = Promise::<(), ()>::and_fulfiller();
+        let mut event_port = ClosedEventPort::new(FulfillerError::NeverFulfilled);
+        let (promise, _) = Promise::<(), FulfillerError>::and_fulfiller();
         let value = promise.wait(wait_scope, &mut event_port);
-        assert_eq!(value, Err(()));
+        assert_eq!(value, Err(FulfillerError::Dropped));
         Ok(())
     }).unwrap();
 }
 
 #[test]
 fn hold_fulfiller() {
-    EventLoop::top_level(|wait_scope| -> Result<(),()> {
-        let mut event_port = ClosedEventPort::new(());
-        let (promise, _fulfiller) = Promise::<(),()>::and_fulfiller();
+    EventLoop::top_level(|wait_scope| -> Result<(), ()> {
+        let mut event_port = ClosedEventPort::new(FulfillerError::NeverFulfilled);
+        let (promise, _fulfiller) = Promise::<(),FulfillerError>::and_fulfiller();
         let value = promise.wait(wait_scope, &mut event_port);
-        assert_eq!(value, Err(()));
+        assert_eq!(value, Err(FulfillerError::NeverFulfilled));
         Ok(())
     }).unwrap();
 }
