@@ -1,0 +1,11 @@
+[package]
+name = "gjio"
+version = "0.1.0"
+authors = ["David Renshaw <david@sandstorm.io>"]
+
+[dependencies.gj]
+path = "../"
+
+[dependencies]
+mio = "0.5"
+nix = "0.4"
