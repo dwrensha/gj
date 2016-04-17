@@ -433,26 +433,6 @@ impl <T, E> PromiseNode<T, E> for ExclusiveJoin<T, E> {
     }
 }
 
-pub struct Wrapper<T, U, E> where T: 'static, E: 'static {
-    node: Box<PromiseNode<T, E>>,
-    inner: U,
-}
-
-impl <T, U, E> Wrapper<T, U, E> {
-    pub fn new(node: Box<PromiseNode<T, E>>, inner: U) -> Wrapper<T, U, E> {
-        Wrapper { node: node, inner: inner }
-    }
-}
-
-impl <T, U, E> PromiseNode<T, E> for Wrapper<T, U, E> {
-    fn on_ready(&mut self, event: GuardedEventHandle) {
-        self.node.on_ready(event);
-    }
-    fn get(self: Box<Self>) -> Result<T, E> {
-        self.node.get()
-    }
-}
-
 enum ForkHubStage<T, E> where T: 'static + Clone, E: 'static + Clone {
     Uninitialized,
     Waiting(Box<PromiseNode<T, E>>),
