@@ -38,7 +38,7 @@ fn eval_void() {
                 Ok(())
             });
         assert_eq!(done.get(), false);
-        promise.wait(wait_scope, &mut event_port).unwrap();
+        try!(promise.wait(wait_scope, &mut event_port));
         assert_eq!(done.get(), true);
         Ok(())
     }).unwrap();
@@ -53,7 +53,7 @@ fn eval_int() {
                 assert_eq!(x, 19);
                 Ok(x + 2)
             });
-        let value = promise.wait(wait_scope, &mut event_port).unwrap();
+        let value = try!(promise.wait(wait_scope, &mut event_port));
         assert_eq!(value, 21);
         Ok(())
     }).unwrap();
@@ -93,6 +93,17 @@ fn drop_fulfiller() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
         let mut event_port = ClosedEventPort::new(());
         let (promise, _) = Promise::<(), ()>::and_fulfiller();
+        let value = promise.wait(wait_scope, &mut event_port);
+        assert_eq!(value, Err(()));
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn hold_fulfiller() {
+    EventLoop::top_level(|wait_scope| -> Result<(),()> {
+        let mut event_port = ClosedEventPort::new(());
+        let (promise, _fulfiller) = Promise::<(),()>::and_fulfiller();
         let value = promise.wait(wait_scope, &mut event_port);
         assert_eq!(value, Err(()));
         Ok(())
