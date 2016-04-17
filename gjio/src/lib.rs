@@ -1,12 +1,14 @@
 #[macro_use]
 extern crate gj;
-extern crate mio;
 extern crate nix;
 
+use std::cell::{RefCell};
+use std::rc::Rc;
 use gj::{Promise, PromiseFulfiller};
 use handle_table::{HandleTable, Handle};
 
 mod handle_table;
+mod sys;
 
 /// A nonblocking input bytestream.
 pub trait Read {
@@ -38,56 +40,84 @@ pub trait AsyncWrite {
     fn write<T: AsRef<[u8]>>(&mut self, buf: T) -> Promise<T, ::std::io::Error>;
 }
 
-
-struct FdObserver {
-    read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
-    write_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
-}
-
+#[cfg(unix)]
+type RawDescriptor = std::os::unix::io::RawFd;
 
 pub struct EventPort {
-    handler: Handler,
-    reactor: ::mio::EventLoop<Handler>,
+    reactor: Rc<RefCell<::sys::Reactor>>,
 }
+
+impl EventPort {
+    pub fn new() -> Result<EventPort, ::std::io::Error> {
+        Ok( EventPort {
+            reactor: Rc::new(RefCell::new(try!(sys::Reactor::new()))),
+        })
+    }
+
+    pub fn get_network(&self) -> Network {
+        Network::new(self.reactor.clone())
+    }
+}
+
 
 impl gj::EventPort<::std::io::Error> for EventPort {
     fn wait(&mut self) -> Result<(), ::std::io::Error> {
-        self.reactor.run_once(&mut self.handler, None)
+        self.reactor.borrow_mut().run_once()
     }
 }
 
-
-struct Handler {
-    observers: HandleTable<FdObserver>,
+pub struct Network {
+    reactor: Rc<RefCell<::sys::Reactor>>,
 }
 
-impl ::mio::Handler for Handler {
-    type Timeout = Timeout;
-    type Message = ();
-    fn ready(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
-             token: ::mio::Token, events: ::mio::EventSet) {
-        if events.is_readable() {
-            match ::std::mem::replace(&mut self.observers[Handle {val: token.0}].read_fulfiller, None) {
-                Some(fulfiller) => {
-                    fulfiller.fulfill(())
-                }
-                None => {
-                    ()
-                }
-            }
-        }
-        if events.is_writable() {
-            match ::std::mem::replace(&mut self.observers[Handle { val: token.0}].write_fulfiller, None) {
-                Some(fulfiller) => fulfiller.fulfill(()),
-                None => (),
-            }
-        }
+impl Network {
+    fn new(reactor: Rc<RefCell<::sys::Reactor>>) -> Network {
+        Network { reactor: reactor }
     }
-    fn timeout(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, timeout: Timeout) {
-        timeout.fulfiller.fulfill(());
+
+
+    fn connect_internal(&mut self, addr: ::nix::sys::socket::SockAddr)
+                        -> Promise<SocketStream, ::std::io::Error>
+    {
+        unimplemented!()
+//        Promise::ok(()).then(move |()| {
+
+//            nix::sys::socket::socket(addr.)
+
+//            ::nix::sys::socket::connect(fd, addr
+/*            let stream = pry!(::mio::tcp::TcpStream::connect(&addr));
+
+            // TODO: if we're not already connected, maybe only register writable interest,
+            // and then reregister with read/write interested once we successfully connect.
+
+            let handle = pry!(register_new_handle(&stream));
+
+            let promise = self.handler.borrow_mut().when_becomes_writable();
+            promise.map(move |()| {
+                try!(stream.take_socket_error());
+                Ok(tcp::Stream::new(stream, handle))
+            })*/
+//        })
+    }
+
+    pub fn connect(&mut self, addr: ::std::net::SocketAddr) -> Promise<SocketStream, ::std::io::Error> {
+        self.connect_internal(
+            ::nix::sys::socket::SockAddr::Inet(::nix::sys::socket::InetAddr::from_std(&addr)))
+    }
+
+    fn bind(addr: ::std::net::SocketAddr) -> Result<SocketListener, ::std::io::Error> {
+        unimplemented!()
     }
 }
 
-struct Timeout {
-    fulfiller: PromiseFulfiller<(), ::std::io::Error>,
+pub struct SocketListener {
+    reactor: Rc<RefCell<::sys::Reactor>>,
+    descriptor: RawDescriptor,
 }
+
+pub struct SocketStream {
+    reactor: Rc<RefCell<::sys::Reactor>>,
+    descriptor: RawDescriptor,
+}
+
+

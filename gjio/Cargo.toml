@@ -7,5 +7,4 @@ authors = ["David Renshaw <david@sandstorm.io>"]
 path = "../"
 
 [dependencies]
-mio = "0.5"
-nix = "0.4"
+nix = "0.5"
