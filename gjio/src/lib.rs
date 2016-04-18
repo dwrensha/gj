@@ -126,6 +126,9 @@ struct SocketListenerInner {
     reactor: Rc<RefCell<::sys::Reactor>>,
     handle: Handle,
     descriptor: RawDescriptor,
+
+    // Ugh. If only std::io::Error were Clone...
+    queue: Option<Promise<RawDescriptor, Rc<RefCell<Option<::std::io::Error>>>>>,
 }
 
 impl Drop for SocketListenerInner {
@@ -153,32 +156,59 @@ impl SocketListener {
                 reactor: reactor,
                 handle: handle,
                 descriptor: descriptor,
+                queue: None,
             })),
         }
     }
 
-    fn accept_internal(reactor: Rc<RefCell<SocketListenerInner>>) -> Promise<SocketStream, ::std::io::Error> {
-        unimplemented!()
-/*        match ::nix::sys::socket::accept4(self.fd, nix::sys::socket::SOCK_NONBLOCK) {
+    fn accept_internal(inner: Rc<RefCell<SocketListenerInner>>) -> Promise<RawDescriptor, ::std::io::Error> {
+        let fd = inner.borrow_mut().descriptor;
+        match ::nix::sys::socket::accept4(fd, nix::sys::socket::SOCK_NONBLOCK) {
             Ok(fd) => {
-                let handle = pry!(reactor.new_observer(fd));
-                Promise::ok(SocketStream::new(reactor, handle, fd))
+                Promise::ok(fd)
             }
             Err(e) => {
                 match e.errno() {
-                    ::nix::Errno::EAGAIN | nix::Errno::EWOULDBLOCK => {
-                        unimplemented!()
+                    ::nix::Errno::EAGAIN => {
+                        let handle = inner.borrow().handle;
+                        let promise = {
+                            let reactor = &inner.borrow().reactor;
+                            let promise = // LOL borrow checker fail.
+                                reactor.borrow_mut().observers[handle].when_becomes_readable();
+                            promise
+                        };
+                        promise.then(|()| {
+                            SocketListener::accept_internal(inner)
+                        })
                     }
                     _ => {
                         Promise::err(e.into())
                     }
                 }
             }
-        }*/
+        }
     }
 
     pub fn accept(&mut self) -> Promise<SocketStream, ::std::io::Error> {
-        SocketListener::accept_internal(self.inner.clone())
+        let inner = self.inner.clone();
+        let inner2 = inner.clone();
+        let maybe_queue = inner.borrow_mut().queue.take();
+        let promise = match maybe_queue {
+            None => SocketListener::accept_internal(inner2),
+            Some(queue) => {
+                queue.then_else(move |_| SocketListener::accept_internal(inner2) )
+            }
+        };
+
+        let mut forked = promise.map_err(|e| Rc::new(RefCell::new(Some(e)))).fork();
+        inner.borrow_mut().queue = Some(forked.add_branch());
+        forked.add_branch().map_err(|e| {
+            e.borrow_mut().take().unwrap()
+        }).map(move |fd| {
+            let reactor = inner.borrow().reactor.clone();
+            let handle = try!(reactor.borrow_mut().new_observer(fd));
+            Ok(SocketStream::new(reactor, handle, fd))
+        })
     }
 }
 
