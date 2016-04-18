@@ -26,9 +26,10 @@
 //!
 //! # Example
 //!
-//!
-//! use gj::{EventLoop, Promise};
-//! EventLoop::top_level(|wait_scope| {
+//! ```
+//! use gj::{EventLoop, Promise, ClosedEventPort};
+//! EventLoop::top_level(|wait_scope| -> Result<(),()> {
+//!     let mut event_port = ClosedEventPort::new(());
 //!     let (promise1, fulfiller1) = Promise::<(),()>::and_fulfiller();
 //!     let (promise2, fulfiller2) = Promise::<(),()>::and_fulfiller();
 //!     let promise3 = promise2.then(|_| {
@@ -41,10 +42,11 @@
 //!         Promise::ok(())
 //!     });
 //!     fulfiller1.fulfill(());
-//!     Promise::all(vec![promise3, promise4].into_iter()).wait(wait_scope).unwrap();
-//!     Ok(())
+//!     Promise::all(vec![promise3, promise4].into_iter())
+//!         .map(|_| Ok(()))
+//!         .wait(wait_scope, &mut event_port)
 //! }).expect("top level");
-//!
+//! ```
 
 
 use std::cell::{Cell, RefCell};
