@@ -40,6 +40,23 @@ pub trait Write {
     fn write<T: AsRef<[u8]>>(&mut self, buf: T) -> Promise<T, ::std::io::Error>;
 }
 
+pub struct Slice<T> where T: AsRef<[u8]> {
+    pub buf: T,
+    pub end: usize,
+}
+
+impl <T> Slice<T> where T: AsRef<[u8]> {
+    pub fn new(buf: T, end: usize) -> Slice<T> {
+        Slice { buf: buf, end: end }
+    }
+}
+
+impl <T> AsRef<[u8]> for Slice<T> where T: AsRef<[u8]> {
+    fn as_ref<'a>(&'a self) -> &'a [u8] {
+        &self.buf.as_ref()[0..self.end]
+    }
+}
+
 #[cfg(unix)]
 type RawDescriptor = std::os::unix::io::RawFd;
 
