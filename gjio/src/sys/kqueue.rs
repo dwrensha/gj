@@ -1,6 +1,7 @@
 use std::os::unix::io::RawFd;
 use gj::{Promise, PromiseFulfiller};
 use handle_table::{HandleTable, Handle};
+use nix::sys::event;
 
 pub struct FdObserver {
     read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
@@ -22,28 +23,82 @@ impl FdObserver {
 }
 
 pub struct Reactor {
-    pub kqueue: RawFd,
+    pub kq: RawFd,
     pub observers: HandleTable<FdObserver>,
+    events: Vec<event::KEvent>,
 }
 
 impl Reactor {
     pub fn new() -> Result<Reactor, ::std::io::Error> {
         Ok(Reactor {
-            kqueue: try!(::nix::sys::event::kqueue()),
+            kq: try!(event::kqueue()),
             observers: HandleTable::new(),
+            events: Vec::with_capacity(1024),
         })
     }
 
     pub fn run_once(&mut self) -> Result<(), ::std::io::Error> {
-        unimplemented!();
-        // call kevent() ...
+
+        let events = unsafe {
+            let ptr = (&mut self.events[..]).as_mut_ptr();
+            ::std::slice::from_raw_parts_mut(ptr, self.events.capacity())
+        };
+
+       // TODO handle EINTR
+        let n = try!(event::kevent(self.kq, &[], events, 0));
+
+        for event in &events[..n] {
+            let handle = Handle { val: event.udata };
+
+            let maybe_fulfiller = match event.filter {
+                event::EventFilter::EVFILT_READ => self.observers[handle].read_fulfiller.take(),
+                event::EventFilter::EVFILT_WRITE => self.observers[handle].write_fulfiller.take(),
+                _ => unreachable!()
+            };
+
+            match maybe_fulfiller {
+                None => (),
+                Some(fulfiller) => {
+                    if event.flags.contains(event::EV_ERROR) {
+                        fulfiller.reject(::std::io::Error::from_raw_os_error(event.data as i32));
+                    } else {
+                        fulfiller.fulfill(());
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
 
     pub fn new_observer(&mut self, fd: RawFd) -> Result<Handle, ::std::io::Error> {
         let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
-        let result = self.observers.push(observer);
-        Ok(result)
+        let handle = self.observers.push(observer);
+
+        let read_event = event::KEvent {
+            ident: fd as usize,
+            filter: event::EventFilter::EVFILT_READ,
+            flags: event::EV_ADD | event::EV_CLEAR,
+            fflags: event::FilterFlag::empty(),
+            data: 0,
+            udata: handle.val
+        };
+
+        let write_event = event::KEvent {
+            ident: fd as usize,
+            filter: event::EventFilter::EVFILT_WRITE,
+            flags: event::EV_ADD | event::EV_CLEAR,
+            fflags: event::FilterFlag::empty(),
+            data: 0,
+            udata: handle.val
+        };
+
+
+        // TODO handle EINTR?
+        try!(event::kevent(self.kq, &[read_event, write_event], &mut[], 0));
+
+        Ok(handle)
     }
 }
 /*

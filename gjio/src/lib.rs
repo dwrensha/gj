@@ -4,8 +4,8 @@ extern crate nix;
 
 use std::cell::{RefCell};
 use std::rc::Rc;
-use gj::{Promise, PromiseFulfiller};
-use handle_table::{HandleTable, Handle};
+use gj::{Promise};
+use handle_table::{Handle};
 
 mod handle_table;
 mod sys;
@@ -116,12 +116,12 @@ impl SocketAddress {
         }
     }
 
-    fn connect(&self) -> Promise<SocketStream, ::std::io::Error>
+    pub fn connect(&self) -> Promise<SocketStream, ::std::io::Error>
     {
         let reactor = self.reactor.clone();
         let addr = self.addr;
         Promise::ok(()).then(move |()| {
-            let mut reactor = reactor;
+            let reactor = reactor;
 
             let fd = pry!(nix::sys::socket::socket(addr.family(), nix::sys::socket::SockType::Stream,
                                                    nix::sys::socket::SOCK_NONBLOCK, 0));
@@ -140,7 +140,7 @@ impl SocketAddress {
         })
     }
 
-    fn bind(&mut self) -> Result<SocketListener, ::std::io::Error>
+    pub fn bind(&mut self) -> Result<SocketListener, ::std::io::Error>
     {
         let fd = try!(nix::sys::socket::socket(self.addr.family(), nix::sys::socket::SockType::Stream,
                                                nix::sys::socket::SOCK_NONBLOCK, 0));

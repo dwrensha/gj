@@ -77,7 +77,7 @@ type TaskState = (tcp::Stream, Vec<u8>);
 /// of promises, such a function could potentially create an unbounded chain of promises. However,
 /// GJ implements a tail-call optimization that shortens promise chains when possible, and therefore
 /// this loop can run indefinitely, consuming only a small, bounded amount of memory.
-fn echo(stream: tcp::Stream, buf: Vec<u8>) -> Promise<TaskState, Error<TaskState>> {
+fn echo(stream: gjio::SocketStream, buf: Vec<u8>) -> Promise<TaskState, ::std::io::Error> {
     stream.try_read(buf, 1).then(move |(stream, buf, n)| {
         if n == 0 { // EOF
             Promise::ok((stream, buf))
