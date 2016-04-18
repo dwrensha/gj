@@ -76,10 +76,50 @@ impl Network {
     }
 
 
-    fn connect_internal(&mut self, addr: ::nix::sys::socket::SockAddr)
-                        -> Promise<SocketStream, ::std::io::Error>
+    pub fn get_tcp_address(&self, addr: ::std::net::SocketAddr) -> SocketAddress {
+        SocketAddress::new(self.reactor.clone(),
+                            ::nix::sys::socket::SockAddr::Inet(::nix::sys::socket::InetAddr::from_std(&addr)))
+    }
+
+    pub fn get_unix_address<P: AsRef<::std::path::Path>>(&self, addr: P)
+                            -> Result<SocketAddress, ::std::io::Error>
+    {
+        // In what situations does this fail?
+        Ok(SocketAddress::new(self.reactor.clone(),
+                               ::nix::sys::socket::SockAddr::Unix(
+                                   try!(::nix::sys::socket::UnixAddr::new(addr.as_ref())))))
+    }
+}
+
+struct SocketListenerInner {
+    reactor: Rc<RefCell<::sys::Reactor>>,
+    handle: Handle,
+    descriptor: RawDescriptor,
+
+    // Ugh. If only std::io::Error were Clone...
+    queue: Option<Promise<RawDescriptor, Rc<RefCell<Option<::std::io::Error>>>>>,
+}
+
+
+pub struct SocketAddress {
+    reactor: Rc<RefCell<::sys::Reactor>>,
+    addr: ::nix::sys::socket::SockAddr,
+}
+
+impl SocketAddress {
+    fn new(reactor: Rc<RefCell<::sys::Reactor>>, addr: ::nix::sys::socket::SockAddr)
+           -> SocketAddress
+    {
+        SocketAddress {
+            reactor: reactor,
+            addr: addr,
+        }
+    }
+
+    fn connect(&self) -> Promise<SocketStream, ::std::io::Error>
     {
         let reactor = self.reactor.clone();
+        let addr = self.addr;
         Promise::ok(()).then(move |()| {
             let mut reactor = reactor;
 
@@ -100,39 +140,21 @@ impl Network {
         })
     }
 
-    pub fn connect(&mut self, addr: ::std::net::SocketAddr) -> Promise<SocketStream, ::std::io::Error> {
-        self.connect_internal(
-            ::nix::sys::socket::SockAddr::Inet(::nix::sys::socket::InetAddr::from_std(&addr)))
-    }
-
-    fn bind_internal(&mut self, addr: ::nix::sys::socket::SockAddr)
-                     -> Result<SocketListener, ::std::io::Error> {
-        let fd = try!(nix::sys::socket::socket(addr.family(), nix::sys::socket::SockType::Stream,
+    fn bind(&mut self) -> Result<SocketListener, ::std::io::Error>
+    {
+        let fd = try!(nix::sys::socket::socket(self.addr.family(), nix::sys::socket::SockType::Stream,
                                                nix::sys::socket::SOCK_NONBLOCK, 0));
 
-        try!(nix::sys::socket::bind(fd, &addr));
+        try!(nix::sys::socket::bind(fd, &self.addr));
         let handle = try!(self.reactor.borrow_mut().new_observer(fd));
         Ok(SocketListener::new(self.reactor.clone(), handle, fd))
     }
-
-    fn bind(&mut self, addr: ::std::net::SocketAddr)
-            -> Result<SocketListener, ::std::io::Error>
-    {
-        self.bind_internal(::nix::sys::socket::SockAddr::Inet(::nix::sys::socket::InetAddr::from_std(&addr)))
-    }
 }
 
-struct SocketListenerInner {
-    reactor: Rc<RefCell<::sys::Reactor>>,
-    handle: Handle,
-    descriptor: RawDescriptor,
-
-    // Ugh. If only std::io::Error were Clone...
-    queue: Option<Promise<RawDescriptor, Rc<RefCell<Option<::std::io::Error>>>>>,
-}
 
 impl Drop for SocketListenerInner {
     fn drop(&mut self) {
+        let _ = ::nix::unistd::close(self.descriptor);
         self.reactor.borrow_mut().observers.remove(self.handle);
     }
 }
@@ -220,6 +242,7 @@ struct SocketStreamInner {
 
 impl Drop for SocketStreamInner {
     fn drop(&mut self) {
+        let _ = ::nix::unistd::close(self.descriptor);
         self.reactor.borrow_mut().observers.remove(self.handle);
     }
 }
