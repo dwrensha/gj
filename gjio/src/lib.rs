@@ -138,6 +138,12 @@ pub struct SocketListener {
     inner: Rc<RefCell<SocketListenerInner>>,
 }
 
+impl Clone for SocketListener {
+    fn clone(&self) -> SocketListener {
+        SocketListener { inner: self.inner.clone() }
+    }
+}
+
 impl SocketListener {
     fn new(reactor: Rc<RefCell<::sys::Reactor>>, handle: Handle, descriptor: RawDescriptor)
            -> SocketListener
@@ -176,24 +182,36 @@ impl SocketListener {
     }
 }
 
-pub struct SocketStream {
+struct SocketStreamInner {
     reactor: Rc<RefCell<::sys::Reactor>>,
     handle: Handle,
     descriptor: RawDescriptor,
 }
 
-impl Drop for SocketStream {
+impl Drop for SocketStreamInner {
     fn drop(&mut self) {
         self.reactor.borrow_mut().observers.remove(self.handle);
+    }
+}
+
+pub struct SocketStream {
+    inner: Rc<RefCell<SocketStreamInner>>,
+}
+
+impl Clone for SocketStream {
+    fn clone(&self) -> SocketStream {
+        SocketStream { inner: self.inner.clone() }
     }
 }
 
 impl SocketStream {
     fn new(reactor: Rc<RefCell<::sys::Reactor>>, handle: Handle, descriptor: RawDescriptor) -> SocketStream {
         SocketStream {
-            reactor: reactor,
-            handle: handle,
-            descriptor: descriptor,
+            inner: Rc::new(RefCell::new(SocketStreamInner {
+                reactor: reactor,
+                handle: handle,
+                descriptor: descriptor,
+            })),
         }
     }
 }
