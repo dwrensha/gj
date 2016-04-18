@@ -34,7 +34,7 @@ pub trait Read {
 }
 
 /// A nonblocking output bytestream.
-pub trait AsyncWrite {
+pub trait Write {
     /// Attempts to write all `buf.len()` bytes from `buf` into the stream. Returns `self` and `buf`
     /// once all of the bytes have been written.
     fn write<T: AsRef<[u8]>>(&mut self, buf: T) -> Promise<T, ::std::io::Error>;
@@ -267,6 +267,102 @@ impl SocketStream {
             })),
         }
     }
+
+    fn try_read_internal<T>(inner: Rc<RefCell<SocketStreamInner>>,
+                            mut buf: T,
+                            mut already_read: usize,
+                            min_bytes: usize)
+                            -> Promise<(T, usize), ::std::io::Error>
+        where T: AsMut<[u8]>
+    {
+        while already_read < min_bytes {
+            let descriptor = inner.borrow().descriptor;
+            match ::nix::unistd::read(descriptor, &mut buf.as_mut()[already_read..]) {
+                Ok(0) => {
+                    // EOF
+                    return Promise::ok((buf, already_read));
+                }
+                Ok(n) => {
+                    already_read += n;
+                }
+                Err(e) => {
+                    match e.errno() {
+                        ::nix::Errno::EINTR => continue,
+                        ::nix::Errno::EAGAIN => {
+                            let handle = inner.borrow().handle;
+                            let promise = {
+                                let reactor = &inner.borrow().reactor;
+                                let promise = // LOL borrow checker fail.
+                                    reactor.borrow_mut().observers[handle].when_becomes_readable();
+                                promise
+                            };
+
+                            return promise.then_else(move |r| match r {
+                                Ok(()) => SocketStream::try_read_internal(inner, buf, already_read, min_bytes),
+                                Err(e) => Promise::err(e)
+                            });
+                        }
+                        _ => {
+                            return Promise::err(e.into())
+                        }
+                    }
+                }
+            }
+        }
+        Promise::ok((buf, already_read))
+    }
+
+    fn write_internal<T>(inner: Rc<RefCell<SocketStreamInner>>,
+                         buf: T,
+                         mut already_written: usize) -> Promise<T, ::std::io::Error>
+        where T: AsRef<[u8]>
+    {
+        while already_written < buf.as_ref().len() {
+            let descriptor = inner.borrow().descriptor;
+            match ::nix::unistd::write(descriptor, &buf.as_ref()[already_written..]) {
+                Ok(n) => {
+                    already_written += n;
+                }
+                Err(e) => {
+                    match e.errno() {
+                        ::nix::Errno::EINTR => continue,
+                        ::nix::Errno::EAGAIN => {
+                            let handle = inner.borrow().handle;
+                            let promise = {
+                                let reactor = &inner.borrow().reactor;
+                                let promise = // LOL borrow checker fail.
+                                    reactor.borrow_mut().observers[handle].when_becomes_writable();
+                                promise
+                            };
+                            return promise.then_else(move |r| match r {
+                                Ok(()) => SocketStream::write_internal(inner, buf, already_written),
+                                Err(e) => Promise::err(e),
+                            })
+                        }
+                        _ => {
+                            return Promise::err(e.into());
+                        }
+                    }
+                }
+            }
+        }
+        Promise::ok(buf)
+    }
 }
 
 
+impl Read for SocketStream {
+    fn try_read<T>(&mut self, buf: T, min_bytes: usize) -> Promise<(T, usize), ::std::io::Error>
+        where T: AsMut<[u8]>
+    {
+        SocketStream::try_read_internal(self.inner.clone(), buf, 0, min_bytes)
+    }
+}
+
+impl Write for SocketStream {
+    fn write<T>(&mut self, buf: T) -> Promise<T, ::std::io::Error>
+        where T: AsRef<[u8]>
+    {
+        SocketStream::write_internal(self.inner.clone(), buf, 0)
+    }
+}
