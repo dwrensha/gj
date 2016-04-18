@@ -79,25 +79,25 @@ impl Network {
     fn connect_internal(&mut self, addr: ::nix::sys::socket::SockAddr)
                         -> Promise<SocketStream, ::std::io::Error>
     {
-        unimplemented!()
-//        Promise::ok(()).then(move |()| {
+        let reactor = self.reactor.clone();
+        Promise::ok(()).then(move |()| {
+            let mut reactor = reactor;
 
-//            nix::sys::socket::socket(addr.)
+            let fd = pry!(nix::sys::socket::socket(addr.family(), nix::sys::socket::SockType::Stream,
+                                                   nix::sys::socket::SOCK_NONBLOCK, 0));
 
-//            ::nix::sys::socket::connect(fd, addr
-/*            let stream = pry!(::mio::tcp::TcpStream::connect(&addr));
+            pry!(::nix::sys::socket::connect(fd, &addr));
+            let handle = pry!(reactor.borrow_mut().new_observer(fd));
 
             // TODO: if we're not already connected, maybe only register writable interest,
             // and then reregister with read/write interested once we successfully connect.
 
-            let handle = pry!(register_new_handle(&stream));
-
-            let promise = self.handler.borrow_mut().when_becomes_writable();
+            let promise = reactor.borrow_mut().observers[handle].when_becomes_writable();
             promise.map(move |()| {
-                try!(stream.take_socket_error());
-                Ok(tcp::Stream::new(stream, handle))
-            })*/
-//        })
+//                try!(stream.take_socket_error());
+                Ok(SocketStream::new(reactor, handle, fd))
+            })
+        })
     }
 
     pub fn connect(&mut self, addr: ::std::net::SocketAddr) -> Promise<SocketStream, ::std::io::Error> {
@@ -105,19 +105,97 @@ impl Network {
             ::nix::sys::socket::SockAddr::Inet(::nix::sys::socket::InetAddr::from_std(&addr)))
     }
 
-    fn bind(addr: ::std::net::SocketAddr) -> Result<SocketListener, ::std::io::Error> {
-        unimplemented!()
+    fn bind_internal(&mut self, addr: ::nix::sys::socket::SockAddr)
+                     -> Result<SocketListener, ::std::io::Error> {
+        let fd = try!(nix::sys::socket::socket(addr.family(), nix::sys::socket::SockType::Stream,
+                                               nix::sys::socket::SOCK_NONBLOCK, 0));
+
+        try!(nix::sys::socket::bind(fd, &addr));
+        let handle = try!(self.reactor.borrow_mut().new_observer(fd));
+        Ok(SocketListener::new(self.reactor.clone(), handle, fd))
+    }
+
+    fn bind(&mut self, addr: ::std::net::SocketAddr)
+            -> Result<SocketListener, ::std::io::Error>
+    {
+        self.bind_internal(::nix::sys::socket::SockAddr::Inet(::nix::sys::socket::InetAddr::from_std(&addr)))
+    }
+}
+
+struct SocketListenerInner {
+    reactor: Rc<RefCell<::sys::Reactor>>,
+    handle: Handle,
+    descriptor: RawDescriptor,
+}
+
+impl Drop for SocketListenerInner {
+    fn drop(&mut self) {
+        self.reactor.borrow_mut().observers.remove(self.handle);
     }
 }
 
 pub struct SocketListener {
-    reactor: Rc<RefCell<::sys::Reactor>>,
-    descriptor: RawDescriptor,
+    inner: Rc<RefCell<SocketListenerInner>>,
+}
+
+impl SocketListener {
+    fn new(reactor: Rc<RefCell<::sys::Reactor>>, handle: Handle, descriptor: RawDescriptor)
+           -> SocketListener
+    {
+        SocketListener {
+            inner: Rc::new(RefCell::new(SocketListenerInner {
+                reactor: reactor,
+                handle: handle,
+                descriptor: descriptor,
+            })),
+        }
+    }
+
+    fn accept_internal(reactor: Rc<RefCell<SocketListenerInner>>) -> Promise<SocketStream, ::std::io::Error> {
+        unimplemented!()
+/*        match ::nix::sys::socket::accept4(self.fd, nix::sys::socket::SOCK_NONBLOCK) {
+            Ok(fd) => {
+                let handle = pry!(reactor.new_observer(fd));
+                Promise::ok(SocketStream::new(reactor, handle, fd))
+            }
+            Err(e) => {
+                match e.errno() {
+                    ::nix::Errno::EAGAIN | nix::Errno::EWOULDBLOCK => {
+                        unimplemented!()
+                    }
+                    _ => {
+                        Promise::err(e.into())
+                    }
+                }
+            }
+        }*/
+    }
+
+    pub fn accept(&mut self) -> Promise<SocketStream, ::std::io::Error> {
+        SocketListener::accept_internal(self.inner.clone())
+    }
 }
 
 pub struct SocketStream {
     reactor: Rc<RefCell<::sys::Reactor>>,
+    handle: Handle,
     descriptor: RawDescriptor,
+}
+
+impl Drop for SocketStream {
+    fn drop(&mut self) {
+        self.reactor.borrow_mut().observers.remove(self.handle);
+    }
+}
+
+impl SocketStream {
+    fn new(reactor: Rc<RefCell<::sys::Reactor>>, handle: Handle, descriptor: RawDescriptor) -> SocketStream {
+        SocketStream {
+            reactor: reactor,
+            handle: handle,
+            descriptor: descriptor,
+        }
+    }
 }
 
 

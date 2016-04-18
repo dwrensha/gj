@@ -1,15 +1,29 @@
 use std::os::unix::io::RawFd;
 use gj::{Promise, PromiseFulfiller};
-use handle_table::HandleTable;
+use handle_table::{HandleTable, Handle};
 
-struct FdObserver {
+pub struct FdObserver {
     read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
     write_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
 }
 
+impl FdObserver {
+    pub fn when_becomes_readable(&mut self) -> Promise<(), ::std::io::Error> {
+        let (promise, fulfiller) = Promise::and_fulfiller();
+        self.read_fulfiller = Some(fulfiller);
+        promise
+    }
+
+    pub fn when_becomes_writable(&mut self) -> Promise<(), ::std::io::Error> {
+        let (promise, fulfiller) = Promise::and_fulfiller();
+        self.write_fulfiller = Some(fulfiller);
+        promise
+    }
+}
+
 pub struct Reactor {
-    kqueue: RawFd,
-    observers: HandleTable<FdObserver>,
+    pub kqueue: RawFd,
+    pub observers: HandleTable<FdObserver>,
 }
 
 impl Reactor {
@@ -23,6 +37,13 @@ impl Reactor {
     pub fn run_once(&mut self) -> Result<(), ::std::io::Error> {
         unimplemented!();
         // call kevent() ...
+    }
+
+
+    pub fn new_observer(&mut self, fd: RawFd) -> Result<Handle, ::std::io::Error> {
+        let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
+        let result = self.observers.push(observer);
+        Ok(result)
     }
 }
 /*
