@@ -160,9 +160,10 @@ impl SocketAddress {
     pub fn bind(&mut self) -> Result<SocketListener, ::std::io::Error>
     {
         let fd = try!(nix::sys::socket::socket(self.addr.family(), nix::sys::socket::SockType::Stream,
-                                               nix::sys::socket::SOCK_NONBLOCK, 0));
-
+                                               nix::sys::socket::SOCK_NONBLOCK | nix::sys::socket::SOCK_CLOEXEC,
+                                               0));
         try!(nix::sys::socket::bind(fd, &self.addr));
+        try!(nix::sys::socket::listen(fd, 1024));
         let handle = try!(self.reactor.borrow_mut().new_observer(fd));
         Ok(SocketListener::new(self.reactor.clone(), handle, fd))
     }
@@ -202,7 +203,7 @@ impl SocketListener {
 
     fn accept_internal(inner: Rc<RefCell<SocketListenerInner>>) -> Promise<RawDescriptor, ::std::io::Error> {
         let fd = inner.borrow_mut().descriptor;
-        match ::nix::sys::socket::accept4(fd, nix::sys::socket::SOCK_NONBLOCK) {
+        match ::nix::sys::socket::accept4(fd, nix::sys::socket::SOCK_NONBLOCK | nix::sys::socket::SOCK_CLOEXEC) {
             Ok(fd) => {
                 Promise::ok(fd)
             }

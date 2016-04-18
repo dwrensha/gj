@@ -149,11 +149,11 @@ pub fn main() {
     EventLoop::top_level(move |wait_scope| -> Result<(), ::std::io::Error> {
         use std::net::ToSocketAddrs;
         let mut event_port = try!(gjio::EventPort::new());
-        let mut network = event_port.get_network();
+        let network = event_port.get_network();
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let mut address = network.get_tcp_address(addr);
         let listener = try!(address.bind());
         let reaper = Box::new(Reaper);
         accept_loop(listener, TaskSet::new(reaper), buffer_pool).lift().wait(wait_scope, &mut event_port)
-    }).unwrap();
+    }).expect("top level");
 }
