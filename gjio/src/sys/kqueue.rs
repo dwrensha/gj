@@ -49,7 +49,9 @@ impl Reactor {
        // TODO handle EINTR
         let n = try!(event::kevent(self.kq, &[], events, 0));
 
-        for event in &events[..n] {
+        unsafe { self.events.set_len(n); }
+
+        for event in &self.events {
             let handle = Handle { val: event.udata };
 
             let maybe_fulfiller = match event.filter {

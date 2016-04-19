@@ -35,15 +35,62 @@ impl Reactor {
         Ok(Reactor {
             ep: try!(epoll::epoll_create()),
             observers: HandleTable::new(),
-            events: Vec::new(),
+            events: Vec::with_capacity(1024),
         })
     }
 
     pub fn run_once(&mut self) -> Result<(), ::std::io::Error> {
-        unimplemented!()
+
+        let events = unsafe {
+            let ptr = (&mut self.events[..]).as_mut_ptr();
+            ::std::slice::from_raw_parts_mut(ptr, self.events.capacity())
+        };
+
+        // TODO handle EINTR
+        let n = try!(epoll::epoll_wait(self.ep, events, -1));
+
+        unsafe { self.events.set_len(n); }
+
+        for event in &self.events {
+            let handle = Handle { val: event.data as usize };
+            if event.events.contains(epoll::EPOLLERR) {
+                // use getsockopt to get pending error on socket?
+                unimplemented!()
+            }
+            if event.events.contains(epoll::EPOLLIN) {
+                match self.observers[handle].read_fulfiller.take() {
+                    None => (),
+                    Some(fulfiller) => {
+                        fulfiller.fulfill(())
+                    }
+                }
+            }
+
+            if event.events.contains(epoll::EPOLLOUT) {
+                match self.observers[handle].write_fulfiller.take() {
+                    None => (),
+                    Some(fulfiller) => {
+                        fulfiller.fulfill(())
+                    }
+                }
+            }
+
+        }
+        Ok(())
     }
 
     pub fn new_observer(&mut self, fd: RawFd) -> Result<Handle, ::std::io::Error> {
-        unimplemented!()
+        let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
+        let handle = self.observers.push(observer);
+
+        let info = epoll::EpollEvent {
+            events: epoll::EPOLLIN | epoll::EPOLLOUT,
+            data: handle.val as u64
+        };
+
+        // TODO handle EINTR
+        try!(epoll::epoll_ctl(self.ep, epoll::EpollOp::EpollCtlAdd, fd, &info));
+
+        Ok(handle)
     }
 }
