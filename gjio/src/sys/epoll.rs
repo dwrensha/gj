@@ -52,24 +52,34 @@ impl Reactor {
 
         for event in &self.events {
             let handle = Handle { val: event.data as usize };
-            if event.events.contains(epoll::EPOLLERR) {
-                // TODO use getsockopt to get pending error on socket?
-                unimplemented!()
-            }
+            let maybe_errno = if event.events.contains(epoll::EPOLLERR) {
+                let errno = try_syscall!(::nix::sys::socket::getsockopt(
+                    self.observers[handle].fd,
+                    ::nix::sys::socket::sockopt::SocketError));
+                Some(errno)
+            } else {
+                None
+            };
             if event.events.contains(epoll::EPOLLIN) {
-                match self.observers[handle].read_fulfiller.take() {
-                    None => (),
-                    Some(fulfiller) => {
-                        fulfiller.fulfill(())
+                match (maybe_errno, self.observers[handle].read_fulfiller.take()) {
+                    (_, None) => (),
+                    (None, Some(fulfiller)) => {
+                        fulfiller.fulfill(());
+                    }
+                    (Some(errno), Some(fulfiller)) => {
+                        fulfiller.reject(::std::io::Error::from_raw_os_error(errno));
                     }
                 }
             }
 
             if event.events.contains(epoll::EPOLLOUT) {
-                match self.observers[handle].write_fulfiller.take() {
-                    None => (),
-                    Some(fulfiller) => {
-                        fulfiller.fulfill(())
+                match (maybe_errno, self.observers[handle].write_fulfiller.take()) {
+                    (_, None) => (),
+                    (None, Some(fulfiller)) => {
+                        fulfiller.fulfill(());
+                    }
+                    (Some(errno), Some(fulfiller)) => {
+                        fulfiller.reject(::std::io::Error::from_raw_os_error(errno));
                     }
                 }
             }
@@ -79,7 +89,7 @@ impl Reactor {
     }
 
     pub fn new_observer(&mut self, fd: RawFd) -> Result<Handle, ::std::io::Error> {
-        let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
+        let observer = FdObserver { fd: fd, read_fulfiller: None, write_fulfiller: None };
         let handle = self.observers.push(observer);
 
         let info = epoll::EpollEvent {

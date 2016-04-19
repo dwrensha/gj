@@ -76,7 +76,7 @@ impl Reactor {
 
 
     pub fn new_observer(&mut self, fd: RawFd) -> Result<Handle, ::std::io::Error> {
-        let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
+        let observer = FdObserver { fd: fd, read_fulfiller: None, write_fulfiller: None };
         let handle = self.observers.push(observer);
 
         let read_event = event::KEvent {

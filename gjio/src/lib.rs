@@ -235,8 +235,15 @@ impl SocketAddress {
 
             let promise = reactor.borrow_mut().observers[handle].when_becomes_writable();
             promise.map(move |()| {
-//                try!(stream.take_socket_error());
-                Ok(SocketStream::new(reactor, handle, fd))
+
+                let errno = try_syscall!(::nix::sys::socket::getsockopt(
+                    fd,
+                    ::nix::sys::socket::sockopt::SocketError));
+                if errno != 0 {
+                    Err(::std::io::Error::from_raw_os_error(errno))
+                } else {
+                    Ok(SocketStream::new(reactor, handle, fd))
+                }
             })
         })
     }
