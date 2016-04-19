@@ -20,28 +20,9 @@
 // THE SOFTWARE.
 
 use std::os::unix::io::RawFd;
-use gj::{Promise, PromiseFulfiller};
 use handle_table::{HandleTable, Handle};
+use sys::FdObserver;
 use nix::sys::event;
-
-pub struct FdObserver {
-    read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
-    write_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
-}
-
-impl FdObserver {
-    pub fn when_becomes_readable(&mut self) -> Promise<(), ::std::io::Error> {
-        let (promise, fulfiller) = Promise::and_fulfiller();
-        self.read_fulfiller = Some(fulfiller);
-        promise
-    }
-
-    pub fn when_becomes_writable(&mut self) -> Promise<(), ::std::io::Error> {
-        let (promise, fulfiller) = Promise::and_fulfiller();
-        self.write_fulfiller = Some(fulfiller);
-        promise
-    }
-}
 
 pub struct Reactor {
     pub kq: RawFd,

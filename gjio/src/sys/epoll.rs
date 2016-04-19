@@ -19,35 +19,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use gj::{Promise, PromiseFulfiller};
+use std::os::unix::io::RawFd;
+use handle_table::{HandleTable, Handle};
+use sys::FdObserver;
 
-#[cfg(target_os = "macos")]
-pub mod kqueue;
-
-#[cfg(target_os = "iinux")]
-pub mod epoll;
-
-#[cfg(target_os = "macos")]
-pub type Reactor = kqueue::Reactor;
-
-#[cfg(target_os = "linux")]
-pub type Reactor = epoll::Reactor;
-
-pub struct FdObserver {
-    read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
-    write_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
+pub struct Reactor {
+    pub observers: HandleTable<FdObserver>,
 }
 
-impl FdObserver {
-    pub fn when_becomes_readable(&mut self) -> Promise<(), ::std::io::Error> {
-        let (promise, fulfiller) = Promise::and_fulfiller();
-        self.read_fulfiller = Some(fulfiller);
-        promise
-    }
-
-    pub fn when_becomes_writable(&mut self) -> Promise<(), ::std::io::Error> {
-        let (promise, fulfiller) = Promise::and_fulfiller();
-        self.write_fulfiller = Some(fulfiller);
-        promise
+impl Reactor {
+    pub fn new() -> Result<Reactor, ::std::io::Error> {
+        Ok(Reactor {
+            observers: HandleTable::new(),
+        })
     }
 }
