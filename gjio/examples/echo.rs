@@ -28,7 +28,7 @@ extern crate gj;
 extern crate gjio;
 
 use gj::{EventLoop, Promise, PromiseFulfiller, TaskReaper, TaskSet};
-use gjio::{Read, Write, Slice};
+use gjio::{AsyncRead, AsyncWrite, Slice};
 use std::cell::RefCell;
 use std::rc::Rc;
 

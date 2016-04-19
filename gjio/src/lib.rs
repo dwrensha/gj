@@ -11,7 +11,7 @@ mod handle_table;
 mod sys;
 
 /// A nonblocking input bytestream.
-pub trait Read {
+pub trait AsyncRead {
     /// Attempts to read `buf.len()` bytes from the stream, writing them into `buf`.
     /// Returns `self`, the modified `buf`, and the number of bytes actually read.
     /// Returns as soon as `min_bytes` are read or EOF is encountered.
@@ -34,7 +34,7 @@ pub trait Read {
 }
 
 /// A nonblocking output bytestream.
-pub trait Write {
+pub trait AsyncWrite {
     /// Attempts to write all `buf.len()` bytes from `buf` into the stream. Returns `self` and `buf`
     /// once all of the bytes have been written.
     fn write<T: AsRef<[u8]>>(&mut self, buf: T) -> Promise<T, ::std::io::Error>;
@@ -382,7 +382,7 @@ impl SocketStream {
 }
 
 
-impl Read for SocketStream {
+impl AsyncRead for SocketStream {
     fn try_read<T>(&mut self, buf: T, min_bytes: usize) -> Promise<(T, usize), ::std::io::Error>
         where T: AsMut<[u8]>
     {
@@ -406,7 +406,7 @@ impl Read for SocketStream {
     }
 }
 
-impl Write for SocketStream {
+impl AsyncWrite for SocketStream {
     fn write<T>(&mut self, buf: T) -> Promise<T, ::std::io::Error>
         where T: AsRef<[u8]>
     {

@@ -23,7 +23,7 @@
 extern crate gj;
 extern crate gjio;
 use gj::{EventLoop, Promise};
-use gjio::{Read, Write};
+use gjio::{AsyncRead, AsyncWrite};
 
 #[test]
 fn hello() {
