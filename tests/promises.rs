@@ -29,7 +29,6 @@ fn eval_void() {
     use std::rc::Rc;
     use std::cell::Cell;
     EventLoop::top_level(|wait_scope| -> Result<(), ()> {
-        let mut event_port = ClosedEventPort::new(());
         let done = Rc::new(Cell::new(false));
         let done1 = done.clone();
         let promise: Promise<(), ()> =
@@ -38,7 +37,7 @@ fn eval_void() {
                 Ok(())
             });
         assert_eq!(done.get(), false);
-        try!(promise.wait(wait_scope, &mut event_port));
+        try!(promise.wait(wait_scope, &mut ClosedEventPort::new(())));
         assert_eq!(done.get(), true);
         Ok(())
     }).unwrap();
@@ -47,13 +46,12 @@ fn eval_void() {
 #[test]
 fn eval_int() {
     EventLoop::top_level(|wait_scope| -> Result<(), ()> {
-        let mut event_port = ClosedEventPort::new(());
         let promise: Promise<u64, ()> =
             Promise::ok(19u64).map(|x| {
                 assert_eq!(x, 19);
                 Ok(x + 2)
             });
-        let value = try!(promise.wait(wait_scope, &mut event_port));
+        let value = try!(promise.wait(wait_scope, &mut ClosedEventPort::new(())));
         assert_eq!(value, 21);
         Ok(())
     }).unwrap();
@@ -62,7 +60,6 @@ fn eval_int() {
 #[test]
 fn fulfiller() {
     EventLoop::top_level(|wait_scope| -> Result<(), ()> {
-        let mut event_port = ClosedEventPort::new(());
         let (promise, fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let p1 = promise.map(|x| {
             assert_eq!(x, 10);
@@ -70,7 +67,7 @@ fn fulfiller() {
         });
 
         fulfiller.fulfill(10);
-        let value = p1.wait(wait_scope, &mut event_port).unwrap();
+        let value = p1.wait(wait_scope, &mut ClosedEventPort::new(())).unwrap();
         assert_eq!(value, 11);
         Ok(())
     }).unwrap();
@@ -85,10 +82,9 @@ impl gj::FulfillerDropped for FulfillerError {
 #[test]
 fn reject_fulfiller() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
-        let mut event_port = ClosedEventPort::new(FulfillerError::NeverFulfilled);
         let (promise, fulfiller) = Promise::<(), FulfillerError>::and_fulfiller();
         fulfiller.reject(FulfillerError::Rejected);
-        let value = promise.wait(wait_scope, &mut event_port);
+        let value = promise.wait(wait_scope, &mut ClosedEventPort::new(FulfillerError::NeverFulfilled));
         assert_eq!(value, Err(FulfillerError::Rejected));
         Ok(())
     }).unwrap();
@@ -97,9 +93,8 @@ fn reject_fulfiller() {
 #[test]
 fn drop_fulfiller() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
-        let mut event_port = ClosedEventPort::new(FulfillerError::NeverFulfilled);
         let (promise, _) = Promise::<(), FulfillerError>::and_fulfiller();
-        let value = promise.wait(wait_scope, &mut event_port);
+        let value = promise.wait(wait_scope, &mut ClosedEventPort::new(FulfillerError::NeverFulfilled));
         assert_eq!(value, Err(FulfillerError::Dropped));
         Ok(())
     }).unwrap();
@@ -108,9 +103,8 @@ fn drop_fulfiller() {
 #[test]
 fn hold_fulfiller() {
     EventLoop::top_level(|wait_scope| -> Result<(), ()> {
-        let mut event_port = ClosedEventPort::new(FulfillerError::NeverFulfilled);
         let (promise, _fulfiller) = Promise::<(),FulfillerError>::and_fulfiller();
-        let value = promise.wait(wait_scope, &mut event_port);
+        let value = promise.wait(wait_scope, &mut ClosedEventPort::new(FulfillerError::NeverFulfilled));
         assert_eq!(value, Err(FulfillerError::NeverFulfilled));
         Ok(())
     }).unwrap();
@@ -119,7 +113,6 @@ fn hold_fulfiller() {
 #[test]
 fn chain() {
     EventLoop::top_level(|wait_scope| -> Result<(), ()> {
-        let mut event_port = ClosedEventPort::new(());
         let promise: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(123) });
         let promise2: Promise<i32, ()> = Promise::ok(()).map(|()| { Ok(321) });
 
@@ -129,7 +122,7 @@ fn chain() {
             })
         });
 
-        let value = promise3.wait(wait_scope, &mut event_port).unwrap();
+        let value = try!(promise3.wait(wait_scope, &mut ClosedEventPort::new(())));
         assert_eq!(444, value);
         Ok(())
     }).unwrap();
@@ -138,7 +131,6 @@ fn chain() {
 #[test]
 fn chain_error() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
-        let mut event_port = ClosedEventPort::new("EVENT PORT CLOSED");
         let promise = Promise::ok(()).map(|()| { Ok("123") });
         let promise2: Promise<&'static str, Box<::std::error::Error>> =
             Promise::ok(()).map(|()| { Ok("XXX321") });
@@ -151,7 +143,7 @@ fn chain_error() {
             })
         });
 
-        assert!(promise3.wait(wait_scope, &mut event_port).is_err());
+        assert!(promise3.wait(wait_scope, &mut ClosedEventPort::new("EVENT PORT CLOSED")).is_err());
         Ok(())
     }).unwrap();
 }
@@ -159,7 +151,6 @@ fn chain_error() {
 #[test]
 fn deep_chain2() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
-        let mut event_port = ClosedEventPort::new(());
         let mut promise: Promise<u32, ()> = Promise::ok(4u32);
 
         for _ in 0..1000 {
@@ -168,7 +159,7 @@ fn deep_chain2() {
             });
         }
 
-        let value = promise.wait(wait_scope, &mut event_port).unwrap();
+        let value = promise.wait(wait_scope, &mut ClosedEventPort::new(())).unwrap();
 
         assert_eq!(value, 4);
         Ok(())
