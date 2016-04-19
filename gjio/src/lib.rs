@@ -137,11 +137,17 @@ impl SocketAddress {
         let addr = self.addr;
         Promise::ok(()).then(move |()| {
             let reactor = reactor;
-
             let fd = pry!(nix::sys::socket::socket(addr.family(), nix::sys::socket::SockType::Stream,
                                                    nix::sys::socket::SOCK_NONBLOCK, 0));
+            loop {
+                match ::nix::sys::socket::connect(fd, &addr) {
+                    Ok(()) => break,
+                    Err(e) if e.errno() == ::nix::Errno::EINTR => continue,
+                    Err(e) if e.errno() == ::nix::Errno::EINPROGRESS => break,
+                    Err(e) => return Promise::err(e.into()),
+                }
+            }
 
-            pry!(::nix::sys::socket::connect(fd, &addr));
             let handle = pry!(reactor.borrow_mut().new_observer(fd));
 
             // TODO: if we're not already connected, maybe only register writable interest,
@@ -155,13 +161,17 @@ impl SocketAddress {
         })
     }
 
-    pub fn bind(&mut self) -> Result<SocketListener, ::std::io::Error>
+    pub fn listen(&mut self) -> Result<SocketListener, ::std::io::Error>
     {
         let fd = try!(nix::sys::socket::socket(self.addr.family(), nix::sys::socket::SockType::Stream,
                                                nix::sys::socket::SOCK_NONBLOCK | nix::sys::socket::SOCK_CLOEXEC,
                                                0));
+
+        try!(::nix::sys::socket::setsockopt(fd, nix::sys::socket::sockopt::ReuseAddr, &true));
         try!(nix::sys::socket::bind(fd, &self.addr));
         try!(nix::sys::socket::listen(fd, 1024));
+
+
         let handle = try!(self.reactor.borrow_mut().new_observer(fd));
         Ok(SocketListener::new(self.reactor.clone(), handle, fd))
     }

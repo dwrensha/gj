@@ -152,7 +152,7 @@ pub fn main() {
         let network = event_port.get_network();
         let addr = try!(args[1].to_socket_addrs()).next().expect("could not parse address");
         let mut address = network.get_tcp_address(addr);
-        let listener = try!(address.bind());
+        let listener = try!(address.listen());
         let reaper = Box::new(Reaper);
         accept_loop(listener, TaskSet::new(reaper), buffer_pool).lift().wait(wait_scope, &mut event_port)
     }).expect("top level");
