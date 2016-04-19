@@ -43,7 +43,7 @@
 //!     fulfiller1.fulfill(());
 //!     Promise::all(vec![promise3, promise4].into_iter())
 //!         .map(|_| Ok(()))
-//!         .wait(wait_scope, &mut ClosedEventPort::new(()))
+//!         .wait(wait_scope, &mut ClosedEventPort(()))
 //! }).expect("top level");
 //! ```
 
@@ -257,19 +257,11 @@ pub trait EventPort<E> {
 }
 
 /// An event port that never emits any events. On wait() it returns the error it was constructed with.
-pub struct ClosedEventPort<E: Clone> {
-    error: E,
-}
-
-impl <E: Clone> ClosedEventPort<E> {
-    pub fn new(error: E) -> ClosedEventPort<E> {
-        ClosedEventPort { error: error }
-    }
-}
+pub struct ClosedEventPort<E: Clone>(pub E);
 
 impl <E: Clone> EventPort<E> for ClosedEventPort<E> {
     fn wait(&mut self) -> Result<(), E> {
-        Err(self.error.clone())
+        Err(self.0.clone())
     }
 }
 
