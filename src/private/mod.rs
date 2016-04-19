@@ -239,16 +239,9 @@ impl <T, E> PromiseAndFulfillerHub<T, E> {
 }
 
 impl <T, E> PromiseAndFulfillerHub<T, E> {
-    pub fn fulfill(&mut self, value: T) {
+    pub fn resolve(&mut self, result: Result<T, E>) {
         if self.result.is_none() {
-            self.result = Some(Ok(value));
-            self.on_ready_event.arm();
-        }
-    }
-
-    pub fn reject(&mut self, error: E) {
-        if self.result.is_none() {
-            self.result = Some(Err(error));
+            self.result = Some(result);
             self.on_ready_event.arm();
         }
     }

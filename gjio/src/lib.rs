@@ -112,9 +112,7 @@ struct SocketListenerInner {
     reactor: Rc<RefCell<::sys::Reactor>>,
     handle: Handle,
     descriptor: RawDescriptor,
-
-    // Ugh. If only std::io::Error were Clone...
-    queue: Option<Promise<RawDescriptor, Rc<RefCell<Option<::std::io::Error>>>>>,
+    queue: Option<Promise<(),()>>,
 }
 
 
@@ -240,11 +238,11 @@ impl SocketListener {
             }
         };
 
-        let mut forked = promise.map_err(|e| Rc::new(RefCell::new(Some(e)))).fork();
-        inner.borrow_mut().queue = Some(forked.add_branch());
-        forked.add_branch().map_err(|e| {
-            e.borrow_mut().take().unwrap()
-        }).map(move |fd| {
+        let (p, f) = Promise::and_fulfiller();
+        inner.borrow_mut().queue = Some(p);
+
+        promise.map(move |fd| {
+            f.resolve(Ok(()));
             let reactor = inner.borrow().reactor.clone();
             let handle = try!(reactor.borrow_mut().new_observer(fd));
             Ok(SocketStream::new(reactor, handle, fd))
@@ -256,6 +254,9 @@ struct SocketStreamInner {
     reactor: Rc<RefCell<::sys::Reactor>>,
     handle: Handle,
     descriptor: RawDescriptor,
+
+    read_queue: Option<Promise<(),()>>,
+    write_queue: Option<Promise<(),()>>,
 }
 
 impl Drop for SocketStreamInner {
@@ -282,6 +283,8 @@ impl SocketStream {
                 reactor: reactor,
                 handle: handle,
                 descriptor: descriptor,
+                read_queue: None,
+                write_queue: None,
             })),
         }
     }
@@ -373,7 +376,23 @@ impl Read for SocketStream {
     fn try_read<T>(&mut self, buf: T, min_bytes: usize) -> Promise<(T, usize), ::std::io::Error>
         where T: AsMut<[u8]>
     {
-        SocketStream::try_read_internal(self.inner.clone(), buf, 0, min_bytes)
+        let inner = self.inner.clone();
+        let inner2 = inner.clone();
+        let maybe_queue = inner.borrow_mut().read_queue.take();
+        let promise = match maybe_queue {
+            None => SocketStream::try_read_internal(inner2, buf, 0, min_bytes),
+            Some(queue) => {
+                queue.then_else(move |_| SocketStream::try_read_internal(inner2, buf, 0, min_bytes) )
+            }
+        };
+
+        let (p, f) = Promise::and_fulfiller();
+        inner.borrow_mut().read_queue = Some(p);
+
+        promise.map_else(move |r| {
+            f.resolve(Ok(()));
+            r
+        })
     }
 }
 
@@ -381,6 +400,22 @@ impl Write for SocketStream {
     fn write<T>(&mut self, buf: T) -> Promise<T, ::std::io::Error>
         where T: AsRef<[u8]>
     {
-        SocketStream::write_internal(self.inner.clone(), buf, 0)
+        let inner = self.inner.clone();
+        let inner2 = inner.clone();
+        let maybe_queue = inner.borrow_mut().write_queue.take();
+        let promise = match maybe_queue {
+            None => SocketStream::write_internal(inner2, buf, 0),
+            Some(queue) => {
+                queue.then_else(move |_| SocketStream::write_internal(inner2, buf, 0) )
+            }
+        };
+
+        let (p, f) = Promise::and_fulfiller();
+        inner.borrow_mut().write_queue = Some(p);
+
+        promise.map_else(move |r| {
+            f.resolve(Ok(()));
+            r
+        })
     }
 }

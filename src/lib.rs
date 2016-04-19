@@ -434,12 +434,17 @@ pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDroppe
 
 impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     pub fn fulfill(mut self, value: T) {
-        self.hub.borrow_mut().fulfill(value);
+        self.hub.borrow_mut().resolve(Ok(value));
         self.done = true;
     }
 
     pub fn reject(mut self, error: E) {
-        self.hub.borrow_mut().reject(error);
+        self.hub.borrow_mut().resolve(Err(error));
+        self.done = true;
+    }
+
+    pub fn resolve(mut self, result: Result<T, E>) {
+        self.hub.borrow_mut().resolve(result);
         self.done = true;
     }
 }
@@ -447,7 +452,7 @@ impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropp
 impl <T, E> Drop for PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     fn drop(&mut self) {
         if !self.done {
-            self.hub.borrow_mut().reject(E::fulfiller_dropped());
+            self.hub.borrow_mut().resolve(Err(E::fulfiller_dropped()));
         }
     }
 }
