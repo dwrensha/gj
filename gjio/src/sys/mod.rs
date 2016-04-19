@@ -19,7 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use std::os::unix::io::RawFd;
 use gj::{Promise, PromiseFulfiller};
 
 #[cfg(target_os = "macos")]
@@ -35,7 +34,6 @@ pub type Reactor = kqueue::Reactor;
 pub type Reactor = epoll::Reactor;
 
 pub struct FdObserver {
-    fd: RawFd,
     read_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
     write_fulfiller: Option<PromiseFulfiller<(), ::std::io::Error>>,
 }

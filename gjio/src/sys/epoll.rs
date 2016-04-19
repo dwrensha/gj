@@ -52,44 +52,34 @@ impl Reactor {
 
         for event in &self.events {
             let handle = Handle { val: event.data as usize };
-            let maybe_errno = if event.events.contains(epoll::EPOLLERR) {
-                let errno = try_syscall!(::nix::sys::socket::getsockopt(
-                    self.observers[handle].fd,
-                    ::nix::sys::socket::sockopt::SocketError));
-                Some(errno)
-            } else {
-                None
-            };
-            if event.events.contains(epoll::EPOLLIN) {
-                match (maybe_errno, self.observers[handle].read_fulfiller.take()) {
-                    (_, None) => (),
-                    (None, Some(fulfiller)) => {
+
+            if event.events.contains(epoll::EPOLLIN) || event.events.contains(epoll::EPOLLHUP) ||
+               event.events.contains(epoll::EPOLLERR)
+            {
+                match self.observers[handle].read_fulfiller.take() {
+                    None => (),
+                    Some(fulfiller) => {
                         fulfiller.fulfill(());
-                    }
-                    (Some(errno), Some(fulfiller)) => {
-                        fulfiller.reject(::std::io::Error::from_raw_os_error(errno));
                     }
                 }
             }
 
-            if event.events.contains(epoll::EPOLLOUT) {
-                match (maybe_errno, self.observers[handle].write_fulfiller.take()) {
-                    (_, None) => (),
-                    (None, Some(fulfiller)) => {
+            if event.events.contains(epoll::EPOLLOUT) || event.events.contains(epoll::EPOLLHUP) ||
+               event.events.contains(epoll::EPOLLERR)
+            {
+                match self.observers[handle].write_fulfiller.take() {
+                    None => (),
+                    Some(fulfiller) => {
                         fulfiller.fulfill(());
-                    }
-                    (Some(errno), Some(fulfiller)) => {
-                        fulfiller.reject(::std::io::Error::from_raw_os_error(errno));
                     }
                 }
             }
-
         }
         Ok(())
     }
 
     pub fn new_observer(&mut self, fd: RawFd) -> Result<Handle, ::std::io::Error> {
-        let observer = FdObserver { fd: fd, read_fulfiller: None, write_fulfiller: None };
+        let observer = FdObserver { read_fulfiller: None, write_fulfiller: None };
         let handle = self.observers.push(observer);
 
         let info = epoll::EpollEvent {
