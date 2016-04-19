@@ -113,7 +113,6 @@ fn echo(mut stream: gjio::SocketStream, buf: Buffer) -> Promise<(), ::std::io::E
     })
 }
 
-/// The task reaper is responsible for returning buffers to the pool once tasks are done with them.
 struct Reaper;
 
 impl TaskReaper<(), ::std::io::Error> for Reaper {

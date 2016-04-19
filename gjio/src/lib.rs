@@ -1,3 +1,64 @@
+// Copyright (c) 2013-2016 Sandstorm Development Group, Inc. and contributors
+// Licensed under the MIT License:
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+//! Asynchronous input and output.
+//!
+//! # Example
+//!
+//!```
+//! extern crate gj;
+//! extern crate gjio;
+//! use gj::{EventLoop, Promise};
+//! use gjio::{AsyncRead, AsyncWrite, Slice};
+//!
+//! fn echo(mut stream: gjio::SocketStream, buf: Vec<u8>) -> Promise<(), ::std::io::Error> {
+//!     stream.try_read(buf, 1).lift().then(move |(buf, n)| {
+//!         if n == 0 { // EOF
+//!             Promise::ok(())
+//!         } else {
+//!             stream.write(Slice::new(buf, n)).then(move |slice| {
+//!                 echo(stream, slice.buf)
+//!             })
+//!         }
+//!     })
+//! }
+//!
+//! fn main() {
+//!     EventLoop::top_level(|wait_scope| -> Result<(), ::std::io::Error> {
+//!         let mut event_port = try!(gjio::EventPort::new());
+//!         //let (stream1, stream2) = try!(unix::Stream::new_pair());
+//!         //let promise1 = echo(stream1, vec![0; 5]); // Tiny buffer just to be difficult.
+//!         //let promise2 = stream2.write(b"hello world").lift().then(|(stream, _)| {
+//!         //    stream.read(vec![0; 11], 11).map(|(_, buf, _)| {
+//!         //        assert_eq!(buf, b"hello world");
+//!         //        Ok(())
+//!         //    }).lift()
+//!         //});
+//!         //try!(Promise::all(vec![promise1, promise2].into_iter()).wait(wait_scope));
+//!         Ok(())
+//!     }).expect("top level");
+//! }
+//!```
+
+
 #[macro_use]
 extern crate gj;
 extern crate nix;
