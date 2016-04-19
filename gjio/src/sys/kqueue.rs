@@ -33,7 +33,7 @@ pub struct Reactor {
 impl Reactor {
     pub fn new() -> Result<Reactor, ::std::io::Error> {
         Ok(Reactor {
-            kq: try!(event::kqueue()),
+            kq: try_syscall!(event::kqueue()),
             observers: HandleTable::new(),
             events: Vec::with_capacity(1024),
         })
@@ -46,8 +46,7 @@ impl Reactor {
             ::std::slice::from_raw_parts_mut(ptr, self.events.capacity())
         };
 
-       // TODO handle EINTR
-        let n = try!(event::kevent(self.kq, &[], events, 0));
+        let n = try_syscall!(event::kevent(self.kq, &[], events, 0));
 
         unsafe { self.events.set_len(n); }
 
@@ -98,42 +97,8 @@ impl Reactor {
             udata: handle.val
         };
 
-
-        // TODO handle EINTR?
-        try!(event::kevent(self.kq, &[read_event, write_event], &mut[], 0));
+        try_syscall!(event::kevent(self.kq, &[read_event, write_event], &mut[], 0));
 
         Ok(handle)
     }
 }
-/*
-impl ::mio::Handler for Handler {
-    type Timeout = Timeout;
-    type Message = ();
-    fn ready(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>,
-             token: ::mio::Token, events: ::mio::EventSet) {
-        if events.is_readable() {
-            match ::std::mem::replace(&mut self.observers[Handle {val: token.0}].read_fulfiller, None) {
-                Some(fulfiller) => {
-                    fulfiller.fulfill(())
-                }
-                None => {
-                    ()
-                }
-            }
-        }
-        if events.is_writable() {
-            match ::std::mem::replace(&mut self.observers[Handle { val: token.0}].write_fulfiller, None) {
-                Some(fulfiller) => fulfiller.fulfill(()),
-                None => (),
-            }
-        }
-    }
-    fn timeout(&mut self, _event_loop: &mut ::mio::EventLoop<Handler>, timeout: Timeout) {
-        timeout.fulfiller.fulfill(());
-    }
-}
-
-struct Timeout {
-    fulfiller: PromiseFulfiller<(), ::std::io::Error>,
-}
-*/

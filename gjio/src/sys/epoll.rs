@@ -33,7 +33,7 @@ pub struct Reactor {
 impl Reactor {
     pub fn new() -> Result<Reactor, ::std::io::Error> {
         Ok(Reactor {
-            ep: try!(epoll::epoll_create()),
+            ep: try_syscall!(epoll::epoll_create()),
             observers: HandleTable::new(),
             events: Vec::with_capacity(1024),
         })
@@ -46,15 +46,14 @@ impl Reactor {
             ::std::slice::from_raw_parts_mut(ptr, self.events.capacity())
         };
 
-        // TODO handle EINTR
-        let n = try!(epoll::epoll_wait(self.ep, events, -1));
+        let n = try_syscall!(epoll::epoll_wait(self.ep, events, -1));
 
         unsafe { self.events.set_len(n); }
 
         for event in &self.events {
             let handle = Handle { val: event.data as usize };
             if event.events.contains(epoll::EPOLLERR) {
-                // use getsockopt to get pending error on socket?
+                // TODO use getsockopt to get pending error on socket?
                 unimplemented!()
             }
             if event.events.contains(epoll::EPOLLIN) {
@@ -88,8 +87,7 @@ impl Reactor {
             data: handle.val as u64
         };
 
-        // TODO handle EINTR
-        try!(epoll::epoll_ctl(self.ep, epoll::EpollOp::EpollCtlAdd, fd, &info));
+        try_syscall!(epoll::epoll_ctl(self.ep, epoll::EpollOp::EpollCtlAdd, fd, &info));
 
         Ok(handle)
     }

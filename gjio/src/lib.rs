@@ -68,6 +68,25 @@ use std::rc::Rc;
 use gj::{Promise};
 use handle_table::{Handle};
 
+macro_rules! try_syscall {
+    ($expr:expr) => (
+        {
+            let result;
+            loop {
+                match $expr {
+                    Ok(v) => {
+                        result = v;
+                        break;
+                    }
+                    Err(e) if e.errno() == ::nix::Errno::EINTR => continue,
+                    Err(e) => return Err(::std::convert::From::from(e))
+                }
+            }
+            result
+        }
+    )
+}
+
 mod handle_table;
 mod sys;
 
@@ -228,9 +247,9 @@ impl SocketAddress {
                                                nix::sys::socket::SOCK_NONBLOCK | nix::sys::socket::SOCK_CLOEXEC,
                                                0));
 
-        try!(::nix::sys::socket::setsockopt(fd, nix::sys::socket::sockopt::ReuseAddr, &true));
-        try!(nix::sys::socket::bind(fd, &self.addr));
-        try!(nix::sys::socket::listen(fd, 1024));
+        try_syscall!(::nix::sys::socket::setsockopt(fd, nix::sys::socket::sockopt::ReuseAddr, &true));
+        try_syscall!(nix::sys::socket::bind(fd, &self.addr));
+        try_syscall!(nix::sys::socket::listen(fd, 1024));
 
 
         let handle = try!(self.reactor.borrow_mut().new_observer(fd));
@@ -272,26 +291,31 @@ impl SocketListener {
 
     fn accept_internal(inner: Rc<RefCell<SocketListenerInner>>) -> Promise<RawDescriptor, ::std::io::Error> {
         let fd = inner.borrow_mut().descriptor;
-        match ::nix::sys::socket::accept4(fd, nix::sys::socket::SOCK_NONBLOCK | nix::sys::socket::SOCK_CLOEXEC) {
-            Ok(fd) => {
-                Promise::ok(fd)
-            }
-            Err(e) => {
-                match e.errno() {
-                    ::nix::Errno::EAGAIN => {
-                        let handle = inner.borrow().handle;
-                        let promise = {
-                            let reactor = &inner.borrow().reactor;
-                            let promise = // LOL borrow checker fail.
-                                reactor.borrow_mut().observers[handle].when_becomes_readable();
-                            promise
-                        };
-                        promise.then(|()| {
-                            SocketListener::accept_internal(inner)
-                        })
-                    }
-                    _ => {
-                        Promise::err(e.into())
+        loop {
+            match ::nix::sys::socket::accept4(fd,
+                                              nix::sys::socket::SOCK_NONBLOCK |
+                                              nix::sys::socket::SOCK_CLOEXEC) {
+                Ok(fd) => {
+                    return Promise::ok(fd);
+                }
+                Err(e) => {
+                    match e.errno() {
+                        ::nix::Errno::EINTR => continue,
+                        ::nix::Errno::EAGAIN => {
+                            let handle = inner.borrow().handle;
+                            let promise = {
+                                let reactor = &inner.borrow().reactor;
+                                let promise = // LOL borrow checker fail.
+                                    reactor.borrow_mut().observers[handle].when_becomes_readable();
+                                promise
+                            };
+                            return promise.then(|()| {
+                                SocketListener::accept_internal(inner)
+                            });
+                        }
+                        _ => {
+                            return Promise::err(e.into());
+                        }
                     }
                 }
             }
