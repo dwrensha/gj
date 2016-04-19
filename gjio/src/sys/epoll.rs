@@ -22,15 +22,28 @@
 use std::os::unix::io::RawFd;
 use handle_table::{HandleTable, Handle};
 use sys::FdObserver;
+use nix::sys::epoll;
 
 pub struct Reactor {
+    pub ep: RawFd,
     pub observers: HandleTable<FdObserver>,
+    events: Vec<epoll::EpollEvent>
 }
 
 impl Reactor {
     pub fn new() -> Result<Reactor, ::std::io::Error> {
         Ok(Reactor {
+            ep: try!(epoll::epoll_create()),
             observers: HandleTable::new(),
+            events: Vec::new(),
         })
+    }
+
+    pub fn run_once(&mut self) -> Result<(), ::std::io::Error> {
+        unimplemented!()
+    }
+
+    pub fn new_observer(&mut self, fd: RawFd) -> Result<Handle, ::std::io::Error> {
+        unimplemented!()
     }
 }

@@ -24,7 +24,7 @@ use gj::{Promise, PromiseFulfiller};
 #[cfg(target_os = "macos")]
 pub mod kqueue;
 
-#[cfg(target_os = "iinux")]
+#[cfg(target_os = "linux")]
 pub mod epoll;
 
 #[cfg(target_os = "macos")]
