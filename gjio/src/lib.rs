@@ -635,4 +635,12 @@ impl Timer {
 
         p
     }
+
+   pub fn timeout_after<T>(&self, delay: ::std::time::Duration,
+                            promise: Promise<T, ::std::io::Error>) -> Promise<T, ::std::io::Error>
+    {
+        promise.exclusive_join(self.after_delay(delay).map(|()| {
+            Err(::std::io::Error::new(::std::io::ErrorKind::Other, "operation timed out"))
+        }))
+    }
 }
