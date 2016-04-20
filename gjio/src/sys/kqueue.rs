@@ -42,7 +42,6 @@ impl Reactor {
     pub fn run_once(&mut self, maybe_timeout: Option<::time::Duration>)
                     -> Result<(), ::std::io::Error>
     {
-        // TODO make sure that timeout is positive!
         let timeout = match maybe_timeout {
             Some(t) if t > ::time::Duration::zero() => t.num_milliseconds() as usize,
             _ => 0,

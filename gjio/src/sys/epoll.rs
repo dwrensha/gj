@@ -39,14 +39,20 @@ impl Reactor {
         })
     }
 
-    pub fn run_once(&mut self) -> Result<(), ::std::io::Error> {
+    pub fn run_once(&mut self, maybe_timeout: Option<::time::Duration>)
+                    -> Result<(), ::std::io::Error>
+    {
+        let timeout = match maybe_timeout {
+            Some(t) if t >= ::time::Duration::zero() => t.num_milliseconds() as isize,
+            _ => -1,
+        };
 
         let events = unsafe {
             let ptr = (&mut self.events[..]).as_mut_ptr();
             ::std::slice::from_raw_parts_mut(ptr, self.events.capacity())
         };
 
-        let n = try_syscall!(epoll::epoll_wait(self.ep, events, -1));
+        let n = try_syscall!(epoll::epoll_wait(self.ep, events, timeout));
 
         unsafe { self.events.set_len(n); }
 
