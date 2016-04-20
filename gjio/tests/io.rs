@@ -81,6 +81,46 @@ fn echo() {
     }).expect("top level");
 }
 
+#[test]
+fn timers() {
+    use std::rc::Rc;
+    use std::cell::Cell;
+
+    EventLoop::top_level(|wait_scope| -> Result<(), ::std::io::Error> {
+        let mut event_port = try!(gjio::EventPort::new());
+        let timer = event_port.get_timer();
+
+        let counter = Rc::new(Cell::new(0u32));
+        let counter1 = counter.clone();
+        let counter2 = counter.clone();
+        let counter3 = counter.clone();
+
+        let p2 = timer.after_delay(::std::time::Duration::from_millis(100)).map(move |()| {
+            assert_eq!(counter2.get(), 1);
+            counter2.set(2);
+            Ok(())
+        });
+
+        let p3 = timer.after_delay(::std::time::Duration::from_millis(500)).map(move |()| {
+            assert_eq!(counter3.get(), 2);
+            counter3.set(3);
+            Ok(())
+        });
+
+        let p1 = timer.after_delay(::std::time::Duration::from_millis(10)).map(move |()| {
+            assert_eq!(counter1.get(), 0);
+            counter1.set(1);
+            Ok(())
+        });
+
+
+        try!(Promise::all(vec![p1,p2,p3].into_iter()).wait(wait_scope, &mut event_port));
+
+        assert_eq!(counter.get(), 3);
+        Ok(())
+    }).expect("top_level");
+}
+
 /*
 #[cfg(unix)]
 #[test]

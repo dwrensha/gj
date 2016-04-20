@@ -62,10 +62,12 @@
 #[macro_use]
 extern crate gj;
 extern crate nix;
+extern crate time;
 
 use std::cell::{RefCell};
 use std::rc::Rc;
-use gj::{Promise};
+use std::collections::BinaryHeap;
+use gj::{Promise, PromiseFulfiller};
 use handle_table::{Handle};
 
 macro_rules! try_syscall {
@@ -142,24 +144,37 @@ type RawDescriptor = std::os::unix::io::RawFd;
 
 pub struct EventPort {
     reactor: Rc<RefCell<::sys::Reactor>>,
+    timer_inner: Rc<RefCell<TimerInner>>,
 }
 
 impl EventPort {
     pub fn new() -> Result<EventPort, ::std::io::Error> {
         Ok( EventPort {
             reactor: Rc::new(RefCell::new(try!(sys::Reactor::new()))),
+            timer_inner: Rc::new(RefCell::new(TimerInner::new())),
         })
     }
 
     pub fn get_network(&self) -> Network {
         Network::new(self.reactor.clone())
     }
+
+    pub fn get_timer(&self) -> Timer {
+        Timer::new(self.timer_inner.clone())
+    }
 }
 
 
 impl gj::EventPort<::std::io::Error> for EventPort {
     fn wait(&mut self) -> Result<(), ::std::io::Error> {
-        self.reactor.borrow_mut().run_once()
+        let timeout = self.timer_inner.borrow_mut().get_wait_timeout();
+
+        try!(self.reactor.borrow_mut().run_once(timeout));
+
+        self.timer_inner.borrow_mut().update_current_time();
+        self.timer_inner.borrow_mut().process();
+
+        Ok(())
     }
 }
 
@@ -519,5 +534,105 @@ impl AsyncWrite for SocketStream {
             f.resolve(Ok(()));
             r
         })
+    }
+}
+
+struct AtTimeFulfiller {
+    time: ::time::SteadyTime,
+    fulfiller: PromiseFulfiller<(), ::std::io::Error>,
+}
+
+impl ::std::cmp::PartialEq for AtTimeFulfiller {
+    fn eq(&self, other: &AtTimeFulfiller) -> bool {
+        self.time == other.time
+    }
+}
+
+impl ::std::cmp::Eq for AtTimeFulfiller {}
+
+impl ::std::cmp::Ord for AtTimeFulfiller {
+    fn cmp(&self, other: &AtTimeFulfiller) -> ::std::cmp::Ordering {
+        if self.time > other.time { ::std::cmp::Ordering::Less }
+        else if self.time < other.time { ::std::cmp::Ordering::Greater }
+        else { ::std::cmp::Ordering::Equal }
+    }
+}
+
+impl ::std::cmp::PartialOrd for AtTimeFulfiller {
+    fn partial_cmp(&self, other: &AtTimeFulfiller) -> Option<::std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+
+struct TimerInner {
+    heap: BinaryHeap<AtTimeFulfiller>,
+    frozen_steady_time: ::time::SteadyTime,
+}
+
+impl TimerInner {
+    fn new() -> TimerInner {
+        TimerInner {
+            heap: BinaryHeap::new(),
+            frozen_steady_time: ::time::SteadyTime::now(),
+        }
+    }
+
+    fn update_current_time(&mut self) {
+        self.frozen_steady_time = ::time::SteadyTime::now();
+    }
+
+    fn get_wait_timeout(&self) -> Option<::time::Duration> {
+        match self.heap.peek() {
+            None => None,
+            Some(ref at_time_fulfiller) => {
+                Some(at_time_fulfiller.time - self.frozen_steady_time +
+                     ::time::Duration::milliseconds(1))
+            }
+        }
+    }
+
+    fn process(&mut self) {
+        loop {
+            match self.heap.peek() {
+                None => return,
+                Some(ref at_time_fulfiller) => {
+                    if at_time_fulfiller.time > self.frozen_steady_time {
+                        return;
+                    }
+                }
+            }
+
+            match self.heap.pop() {
+                None => unreachable!(),
+                Some(AtTimeFulfiller { time : _, fulfiller }) => {
+                    fulfiller.fulfill(());
+                }
+            }
+        }
+    }
+}
+
+pub struct Timer {
+    inner: Rc<RefCell<TimerInner>>,
+}
+
+impl Timer {
+    fn new(inner: Rc<RefCell<TimerInner>>) -> Timer {
+        Timer { inner: inner }
+    }
+
+    pub fn after_delay(&self, delay: ::std::time::Duration) -> Promise<(), ::std::io::Error> {
+        let delay = match ::time::Duration::from_std(delay) {
+            Ok(d) => d,
+            Err(e) => return Promise::err(
+                ::std::io::Error::new(::std::io::ErrorKind::Other, format!("{}", e))),
+        };
+        let time = self.inner.borrow().frozen_steady_time + delay;
+        let (p, f) = Promise::and_fulfiller();
+
+        self.inner.borrow_mut().heap.push(AtTimeFulfiller { time: time, fulfiller: f });
+
+        p
     }
 }
