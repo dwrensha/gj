@@ -20,9 +20,5 @@ Promises that are chained recursively can be thought of as lightweight stackless
 A GJ event loop allows you to execute many such tasks on a single operating system thread
 and to safely share mutable data between them without any need for mutexes or atomics.
 
-GJ also provides a completion-based I/O interface.
-
-
-
-
-
+For a completion-based I/O interface built on top of GJ,
+see [gjio](https://github.com/dwrensha/gjio).
