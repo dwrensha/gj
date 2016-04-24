@@ -10,4 +10,4 @@ documentation = "https://docs.capnproto-rust.org/gj/"
 
 readme = "README.md"
 
-keywords = ["promise", "async", "event loop"]
+keywords = ["promise", "async", "event"]
