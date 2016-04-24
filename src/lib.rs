@@ -251,8 +251,9 @@ impl <T, E> ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
 }
 
 /// Interface between an `EventLoop` and events originating from outside of the loop's thread.
+/// Needed in [`Promise::wait()`](struct.Promise.html#method.wait).
 pub trait EventPort<E> {
-    /// Waits for an external event to arrive, sleeping if necessary.
+    /// Waits for an external event to arrive, blocking the thread if necessary.
     fn wait(&mut self) -> Result<(), E>;
 }
 
@@ -278,13 +279,11 @@ pub struct EventLoop {
     to_destroy: Cell<Option<private::EventHandle>>,
 }
 
-
-
 impl EventLoop {
     /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
     /// closure and then drops the event loop.
-    pub fn top_level<T, E, F>(main: F) -> Result<T, E>
-        where F: FnOnce(&WaitScope) -> Result<T, E>,
+    pub fn top_level<R, F>(main: F) -> R
+        where F: FnOnce(&WaitScope) -> R,
     {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
         let dummy = private::EventNode { event: None, next: None, prev: None };
@@ -416,8 +415,8 @@ pub trait FulfillerDropped {
 /// A handle that can be used to fulfill or reject a promise. If you think of a promise
 /// as the receiving end of a oneshot channel, then this is the sending end.
 ///
-/// When a `PromiseFulfiller<T,E>` is dropped without receiving a `fulfill()` or `reject()` call,
-/// its promise is rejected with the error value `E::fulfiller_dropped()`.
+/// When a `PromiseFulfiller<T,E>` is dropped without first receiving a `fulfill()`, `reject()`, or
+/// `resolve()` call, its promise is rejected with the error value `E::fulfiller_dropped()`.
 pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
     hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>,
     done: bool,
