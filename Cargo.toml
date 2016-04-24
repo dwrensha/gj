@@ -1,7 +1,7 @@
 [package]
 
 name = "gj"
-version = "0.2.0-dev"
+version = "0.2.0"
 authors = [ "David Renshaw <david@sandstorm.io>" ]
 license = "MIT"
 description = "Event loop and promises."
@@ -10,5 +10,4 @@ documentation = "https://docs.capnproto-rust.org/gj/"
 
 readme = "README.md"
 
-keywords = ["promise", "async", "io"]
-
+keywords = ["promise", "async", "event loop"]
