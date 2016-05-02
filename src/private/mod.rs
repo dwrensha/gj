@@ -23,7 +23,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::collections::HashMap;
 use std::result::Result;
-use handle_table::{Handle};
+use handle_table::Handle;
 use {EventLoop, TaskReaper};
 
 pub mod promise_node;
@@ -46,8 +46,8 @@ pub trait PromiseNode<T, E> {
     fn on_ready(&mut self, event: GuardedEventHandle);
 
     /// Tells the node that `_self_ptr` is the pointer that owns this node, and will continue to own
-    /// this node until it is destroyed or set_self_pointer() is called again. promise_node::Chain uses
-    /// this to shorten redundant chains.  The default implementation does nothing; only
+    /// this node until it is destroyed or set_self_pointer() is called again. promise_node::Chain
+    /// uses this to shorten redundant chains. The default implementation does nothing; only
     /// promise_node::Chain should implement this.
     fn set_self_pointer(&mut self, _self_ptr: Weak<RefCell<promise_node::ChainState<T, E>>>) {}
     fn get(self: Box<Self>) -> Result<T, E>;
@@ -84,13 +84,17 @@ impl Clone for GuardedEventHandle {
 impl GuardedEventHandle {
     pub fn new() -> (GuardedEventHandle, EventDropper) {
         with_current_event_loop(|event_loop| {
-            let node = EventNode { event: None, next: None, prev: None };
+            let node = EventNode {
+                event: None,
+                next: None,
+                prev: None,
+            };
             let handle = EventHandle(event_loop.events.borrow_mut().push(node));
             let guarded_handle = GuardedEventHandle {
                 event_handle: handle,
-                still_valid: Rc::new(Cell::new(true))
+                still_valid: Rc::new(Cell::new(true)),
             };
-            (guarded_handle.clone(), EventDropper { guarded_event_handle:  guarded_handle.clone() })
+            (guarded_handle.clone(), EventDropper { guarded_event_handle: guarded_handle.clone() })
         })
     }
 
@@ -120,7 +124,7 @@ impl GuardedEventHandle {
 pub struct EventNode {
     pub event: Option<Box<Event>>,
     pub next: Option<EventHandle>,
-    pub prev: Option<EventHandle>
+    pub prev: Option<EventHandle>,
 }
 
 pub struct EventDropper {
@@ -227,18 +231,24 @@ impl OnReadyEvent {
     }
 }
 
-pub struct PromiseAndFulfillerHub<T, E> where T: 'static, E: 'static {
+pub struct PromiseAndFulfillerHub<T, E>
+    where T: 'static,
+          E: 'static
+{
     result: Option<Result<T, E>>,
     on_ready_event: OnReadyEvent,
 }
 
-impl <T, E> PromiseAndFulfillerHub<T, E> {
+impl<T, E> PromiseAndFulfillerHub<T, E> {
     pub fn new() -> PromiseAndFulfillerHub<T, E> {
-        PromiseAndFulfillerHub { result: None::<Result<T, E>>, on_ready_event: OnReadyEvent::Empty }
+        PromiseAndFulfillerHub {
+            result: None::<Result<T, E>>,
+            on_ready_event: OnReadyEvent::Empty,
+        }
     }
 }
 
-impl <T, E> PromiseAndFulfillerHub<T, E> {
+impl<T, E> PromiseAndFulfillerHub<T, E> {
     pub fn resolve(&mut self, result: Result<T, E>) {
         if self.result.is_none() {
             self.result = Some(result);
@@ -247,42 +257,47 @@ impl <T, E> PromiseAndFulfillerHub<T, E> {
     }
 }
 
-pub struct PromiseAndFulfillerWrapper<T, E> where T: 'static, E: 'static {
-    hub: ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>>
+pub struct PromiseAndFulfillerWrapper<T, E>
+    where T: 'static,
+          E: 'static
+{
+    hub: ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>>,
 }
 
-impl <T, E> PromiseAndFulfillerWrapper<T, E> {
+impl<T, E> PromiseAndFulfillerWrapper<T, E> {
     pub fn new(hub: ::std::rc::Rc<::std::cell::RefCell<PromiseAndFulfillerHub<T, E>>>)
-               -> PromiseAndFulfillerWrapper<T, E>
-    {
+               -> PromiseAndFulfillerWrapper<T, E> {
         PromiseAndFulfillerWrapper { hub: hub }
     }
 }
 
-impl <T, E> Drop for PromiseAndFulfillerWrapper<T, E> {
+impl<T, E> Drop for PromiseAndFulfillerWrapper<T, E> {
     fn drop(&mut self) {
         self.hub.borrow_mut().on_ready_event = OnReadyEvent::Empty;
     }
 }
 
-impl <T, E> PromiseNode<T, E> for PromiseAndFulfillerWrapper<T, E> {
+impl<T, E> PromiseNode<T, E> for PromiseAndFulfillerWrapper<T, E> {
     fn on_ready(&mut self, event: GuardedEventHandle) {
         self.hub.borrow_mut().on_ready_event.init(event);
     }
     fn get(self: Box<Self>) -> Result<T, E> {
         match ::std::mem::replace(&mut self.hub.borrow_mut().result, None) {
             None => panic!("no result!"),
-            Some(r) => r
+            Some(r) => r,
         }
     }
 }
 
-pub struct TaskSetImpl<T, E> where T: 'static, E: 'static {
+pub struct TaskSetImpl<T, E>
+    where T: 'static,
+          E: 'static
+{
     reaper: Rc<RefCell<Box<TaskReaper<T, E>>>>,
     tasks: Rc<RefCell<HashMap<EventHandle, EventDropper>>>,
 }
 
-impl <T, E> TaskSetImpl <T, E> {
+impl<T, E> TaskSetImpl<T, E> {
     pub fn new(reaper: Box<TaskReaper<T, E>>) -> TaskSetImpl<T, E> {
         TaskSetImpl {
             reaper: Rc::new(RefCell::new(reaper)),
@@ -290,34 +305,35 @@ impl <T, E> TaskSetImpl <T, E> {
         }
     }
 
-      pub fn add(&self, mut node: Box<PromiseNode<T, E>>) {
-          let (handle, dropper) = GuardedEventHandle::new();
-          node.on_ready(handle.clone());
-          let task = Task {
-              weak_reaper: Rc::downgrade(&self.reaper),
-              weak_tasks: Rc::downgrade(&self.tasks),
-              node: Some(node),
-              event_handle: handle.clone(),
-          };
-          handle.set(Box::new(task));
-          self.tasks.borrow_mut().insert(handle.event_handle, dropper);
+    pub fn add(&self, mut node: Box<PromiseNode<T, E>>) {
+        let (handle, dropper) = GuardedEventHandle::new();
+        node.on_ready(handle.clone());
+        let task = Task {
+            weak_reaper: Rc::downgrade(&self.reaper),
+            weak_tasks: Rc::downgrade(&self.tasks),
+            node: Some(node),
+            event_handle: handle.clone(),
+        };
+        handle.set(Box::new(task));
+        self.tasks.borrow_mut().insert(handle.event_handle, dropper);
     }
 }
 
-pub struct Task<T, E> where T: 'static, E: 'static {
+pub struct Task<T, E>
+    where T: 'static,
+          E: 'static
+{
     weak_reaper: Weak<RefCell<Box<TaskReaper<T, E>>>>,
     weak_tasks: Weak<RefCell<HashMap<EventHandle, EventDropper>>>,
     node: Option<Box<PromiseNode<T, E>>>,
     event_handle: GuardedEventHandle,
 }
 
-impl <T, E> Event for Task<T, E> {
+impl<T, E> Event for Task<T, E> {
     fn fire(&mut self) {
         let maybe_node = ::std::mem::replace(&mut self.node, None);
         match maybe_node {
-            None => {
-                unreachable!()
-            }
+            None => unreachable!(),
             Some(node) => {
                 match self.weak_reaper.upgrade() {
                     None => (),

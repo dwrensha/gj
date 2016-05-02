@@ -76,11 +76,14 @@ mod handle_table;
 /// A computation that might eventually resolve to a value of type `T` or to an error
 ///  of type `E`. Dropping the promise cancels the computation.
 #[must_use]
-pub struct Promise<T, E> where T: 'static, E: 'static {
+pub struct Promise<T, E>
+    where T: 'static,
+          E: 'static
+{
     node: Box<PromiseNode<T, E>>,
 }
 
-impl <T, E> Promise <T, E> {
+impl<T, E> Promise<T, E> {
     /// Creates a new promise that has already been fulfilled with the given value.
     pub fn ok(value: T) -> Promise<T, E> {
         Promise { node: Box::new(promise_node::Immediate::new(Ok(value))) }
@@ -101,9 +104,14 @@ impl <T, E> Promise <T, E> {
         where E: FulfillerDropped
     {
         let result = Rc::new(RefCell::new(PromiseAndFulfillerHub::new()));
-        let result_promise: Promise<T, E> =
-            Promise { node: Box::new(PromiseAndFulfillerWrapper::new(result.clone()))};
-        (result_promise, PromiseFulfiller{ hub: result, done: false })
+        let result_promise: Promise<T, E> = Promise {
+            node: Box::new(PromiseAndFulfillerWrapper::new(result.clone())),
+        };
+        (result_promise,
+         PromiseFulfiller {
+            hub: result,
+            done: false,
+        })
     }
 
     /// Chains further computation to be executed once the promise resolves.
@@ -116,18 +124,23 @@ impl <T, E> Promise <T, E> {
     /// `func` might be invoked is during the next `turn()` of the event loop.
     pub fn then_else<F, T1, E1>(self, func: F) -> Promise<T1, E1>
         where F: 'static,
-              F: FnOnce(Result<T, E>) -> Promise<T1, E1>,
+              F: FnOnce(Result<T, E>) -> Promise<T1, E1>
     {
-        let intermediate = Box::new(promise_node::Transform::new(self.node, |x| Ok(func(x)) ));
+        let intermediate = Box::new(promise_node::Transform::new(self.node, |x| Ok(func(x))));
         Promise { node: Box::new(promise_node::Chain::new(intermediate)) }
     }
 
     /// Calls `then_else()` with a default error handler that simply propagates all errors.
     pub fn then<F, T1>(self, func: F) -> Promise<T1, E>
         where F: 'static,
-              F: FnOnce(T) -> Promise<T1, E>,
+              F: FnOnce(T) -> Promise<T1, E>
     {
-        self.then_else(|r| { match r { Ok(v) => func(v), Err(e) => Promise::err(e) } })
+        self.then_else(|r| {
+            match r {
+                Ok(v) => func(v),
+                Err(e) => Promise::err(e),
+            }
+        })
     }
 
     /// Like `then_else()` but for a `func` that returns a direct value rather than a promise. As an
@@ -139,7 +152,7 @@ impl <T, E> Promise <T, E> {
     /// method to suppress this behavior.
     pub fn map_else<F, T1, E1>(self, func: F) -> Promise<T1, E1>
         where F: 'static,
-              F: FnOnce(Result<T, E>) -> Result<T1, E1>,
+              F: FnOnce(Result<T, E>) -> Result<T1, E1>
     {
         Promise { node: Box::new(promise_node::Transform::new(self.node, func)) }
     }
@@ -150,7 +163,12 @@ impl <T, E> Promise <T, E> {
               F: FnOnce(T) -> Result<R, E>,
               R: 'static
     {
-        self.map_else(|r| { match r { Ok(v) => func(v), Err(e) =>  Err(e) } } )
+        self.map_else(|r| {
+            match r {
+                Ok(v) => func(v),
+                Err(e) => Err(e),
+            }
+        })
     }
 
     /// Transforms the error branch of the promise.
@@ -158,11 +176,18 @@ impl <T, E> Promise <T, E> {
         where F: 'static,
               F: FnOnce(E) -> E1
     {
-        self.map_else(|r| { match r { Ok(v) => Ok(v), Err(e) =>  Err(func(e)) } } )
+        self.map_else(|r| {
+            match r {
+                Ok(v) => Ok(v),
+                Err(e) => Err(func(e)),
+            }
+        })
     }
 
     /// Maps errors into a more general type.
-    pub fn lift<E1>(self) -> Promise<T, E1> where E: Into<E1> {
+    pub fn lift<E1>(self) -> Promise<T, E1>
+        where E: Into<E1>
+    {
         self.map_err(|e| e.into())
     }
 
@@ -175,33 +200,44 @@ impl <T, E> Promise <T, E> {
     /// Transforms a collection of promises into a promise for a vector. If any of
     /// the promises fails, immediately cancels the remaining promises.
     pub fn all<I>(promises: I) -> Promise<Vec<T>, E>
-        where I: Iterator<Item=Promise<T, E>>
+        where I: Iterator<Item = Promise<T, E>>
     {
         Promise { node: Box::new(private::promise_node::ArrayJoin::new(promises)) }
     }
 
     /// Forks the promise, so that multiple different clients can independently wait on the result.
-    pub fn fork(self) -> ForkedPromise<T, E> where T: Clone, E: Clone {
+    pub fn fork(self) -> ForkedPromise<T, E>
+        where T: Clone,
+              E: Clone
+    {
         ForkedPromise::new(self)
     }
 
     /// Holds onto `value` until the promise resolves, then drops `value`.
-    pub fn attach<U>(self, value: U) -> Promise<T, E> where U: 'static {
-        self.map_else(move |result| { drop(value); result })
+    pub fn attach<U>(self, value: U) -> Promise<T, E>
+        where U: 'static
+    {
+        self.map_else(move |result| {
+            drop(value);
+            result
+        })
     }
 
-    /// Forces eager evaluation of this promise.  Use this if you are going to hold on to the promise
+    /// Forces eager evaluation of this promise. Use this if you are going to hold on to the promise
     /// for a while without consuming the result, but you want to make sure that the system actually
     /// processes it.
     pub fn eagerly_evaluate(self) -> Promise<T, E> {
-        self.then(|v| { Promise::ok(v) })
+        self.then(|v| Promise::ok(v))
     }
 
     /// Runs the event loop until the promise is fulfilled.
     ///
-    /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a program.
-    /// Waiting within event callbacks is disallowed.
-    pub fn wait<E1>(mut self, wait_scope: &WaitScope, event_source: &mut EventPort<E1>) -> Result<T, E>
+    /// The `WaitScope` argument ensures that `wait()` can only be called at the top level of a
+    /// program. Waiting within event callbacks is disallowed.
+    pub fn wait<E1>(mut self,
+                    wait_scope: &WaitScope,
+                    event_source: &mut EventPort<E1>)
+                    -> Result<T, E>
         where E: From<E1>
     {
         drop(wait_scope);
@@ -212,7 +248,7 @@ impl <T, E> Promise <T, E> {
             handle.set(Box::new(done_event));
             self.node.on_ready(handle);
 
-            //event_loop.running = true;
+            // event_loop.running = true;
 
             while !fired.get() {
                 if !event_loop.turn() {
@@ -226,22 +262,26 @@ impl <T, E> Promise <T, E> {
     }
 }
 
-/// A scope in which asynchronous programming can occur. Corresponds to the top level scope
-/// of some [event loop](struct.EventLoop.html). Can be used to [wait](struct.Promise.html#method.wait)
-/// for the result of a promise.
+/// A scope in which asynchronous programming can occur. Corresponds to the top level scope of some
+/// [event loop](struct.EventLoop.html). Can be used to [wait](struct.Promise.html#method.wait) for
+/// the result of a promise.
 pub struct WaitScope(::std::marker::PhantomData<*mut u8>); // impl !Sync for WaitScope {}
 
 /// The result of `Promise::fork()`. Allows branches to be created. Dropping the `ForkedPromise`
 /// along with any branches created through `add_branch()` will cancel the computation.
-pub struct ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
+pub struct ForkedPromise<T, E>
+    where T: 'static + Clone,
+          E: 'static + Clone
+{
     hub: Rc<RefCell<promise_node::ForkHub<T, E>>>,
 }
 
-impl <T, E> ForkedPromise<T, E> where T: 'static + Clone, E: 'static + Clone {
+impl<T, E> ForkedPromise<T, E>
+    where T: 'static + Clone,
+          E: 'static + Clone
+{
     fn new(inner: Promise<T, E>) -> ForkedPromise<T, E> {
-        ForkedPromise {
-            hub: Rc::new(RefCell::new(promise_node::ForkHub::new(inner.node))),
-        }
+        ForkedPromise { hub: Rc::new(RefCell::new(promise_node::ForkHub::new(inner.node))) }
     }
 
     /// Creates a new promise that will resolve when the originally forked promise resolves.
@@ -257,10 +297,11 @@ pub trait EventPort<E> {
     fn wait(&mut self) -> Result<(), E>;
 }
 
-/// An event port that never emits any events. On wait() it returns the error it was constructed with.
+/// An event port that never emits any events. On wait() it returns the error it was constructed
+/// with.
 pub struct ClosedEventPort<E: Clone>(pub E);
 
-impl <E: Clone> EventPort<E> for ClosedEventPort<E> {
+impl<E: Clone> EventPort<E> for ClosedEventPort<E> {
     fn wait(&mut self) -> Result<(), E> {
         Err(self.0.clone())
     }
@@ -268,7 +309,7 @@ impl <E: Clone> EventPort<E> for ClosedEventPort<E> {
 
 /// A queue of events being executed in a loop on a single thread.
 pub struct EventLoop {
-//    daemons: TaskSetImpl,
+    // daemons: TaskSetImpl,
     _running: bool,
     _last_runnable_state: bool,
     events: RefCell<handle_table::HandleTable<private::EventNode>>,
@@ -280,13 +321,17 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    /// Creates an event loop for the current thread, panicking if one already exists. Runs the given
-    /// closure and then drops the event loop.
+    /// Creates an event loop for the current thread, panicking if one already exists. Runs the
+    /// given closure and then drops the event loop.
     pub fn top_level<R, F>(main: F) -> R
-        where F: FnOnce(&WaitScope) -> R,
+        where F: FnOnce(&WaitScope) -> R
     {
         let mut events = handle_table::HandleTable::<private::EventNode>::new();
-        let dummy = private::EventNode { event: None, next: None, prev: None };
+        let dummy = private::EventNode {
+            event: None,
+            next: None,
+            prev: None,
+        };
         let head_handle = private::EventHandle(events.push(dummy));
 
         EVENT_LOOP.with(move |maybe_event_loop| {
@@ -330,7 +375,8 @@ impl EventLoop {
     }
 
     fn arm_depth_first(&self, event_handle: private::EventHandle) {
-        let insertion_node_next = self.events.borrow()[self.depth_first_insertion_point.get().0].next;
+        let insertion_node_next = self.events.borrow()[self.depth_first_insertion_point.get().0]
+                                      .next;
 
         match insertion_node_next {
             Some(next_handle) => {
@@ -342,8 +388,10 @@ impl EventLoop {
             }
         }
 
-        self.events.borrow_mut()[event_handle.0].prev = Some(self.depth_first_insertion_point.get());
-        self.events.borrow_mut()[self.depth_first_insertion_point.get().0].next = Some(event_handle);
+        self.events.borrow_mut()[event_handle.0].prev = Some(self.depth_first_insertion_point
+                                                                 .get());
+        self.events.borrow_mut()[self.depth_first_insertion_point.get().0].next =
+            Some(event_handle);
         self.depth_first_insertion_point.set(event_handle);
     }
 
@@ -372,13 +420,14 @@ impl EventLoop {
 
         let event_handle = match self.events.borrow()[self.head.0].next {
             None => return false,
-            Some(event_handle) => { event_handle }
+            Some(event_handle) => event_handle,
         };
         self.depth_first_insertion_point.set(event_handle);
 
         self.currently_firing.set(Some(event_handle));
-        let mut event = ::std::mem::replace(&mut self.events.borrow_mut()[event_handle.0].event, None)
-            .expect("No event to fire?");
+        let mut event = ::std::mem::replace(&mut self.events.borrow_mut()[event_handle.0].event,
+                                            None)
+                            .expect("No event to fire?");
         event.fire();
         self.currently_firing.set(None);
 
@@ -417,12 +466,18 @@ pub trait FulfillerDropped {
 ///
 /// When a `PromiseFulfiller<T,E>` is dropped without first receiving a `fulfill()`, `reject()`, or
 /// `resolve()` call, its promise is rejected with the error value `E::fulfiller_dropped()`.
-pub struct PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
-    hub: Rc<RefCell<private::PromiseAndFulfillerHub<T,E>>>,
+pub struct PromiseFulfiller<T, E>
+    where T: 'static,
+          E: 'static + FulfillerDropped
+{
+    hub: Rc<RefCell<private::PromiseAndFulfillerHub<T, E>>>,
     done: bool,
 }
 
-impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
+impl<T, E> PromiseFulfiller<T, E>
+    where T: 'static,
+          E: 'static + FulfillerDropped
+{
     pub fn fulfill(mut self, value: T) {
         self.hub.borrow_mut().resolve(Ok(value));
         self.done = true;
@@ -439,7 +494,10 @@ impl <T, E> PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropp
     }
 }
 
-impl <T, E> Drop for PromiseFulfiller<T, E> where T: 'static, E: 'static + FulfillerDropped {
+impl<T, E> Drop for PromiseFulfiller<T, E>
+    where T: 'static,
+          E: 'static + FulfillerDropped
+{
     fn drop(&mut self) {
         if !self.done {
             self.hub.borrow_mut().resolve(Err(E::fulfiller_dropped()));
@@ -448,22 +506,28 @@ impl <T, E> Drop for PromiseFulfiller<T, E> where T: 'static, E: 'static + Fulfi
 }
 
 impl FulfillerDropped for () {
-    fn fulfiller_dropped() -> () { () }
+    fn fulfiller_dropped() -> () {
+        ()
+    }
 }
 
 impl FulfillerDropped for ::std::io::Error {
     fn fulfiller_dropped() -> ::std::io::Error {
-        ::std::io::Error::new(::std::io::ErrorKind::Other, "Promise fulfiller was dropped.")
+        ::std::io::Error::new(::std::io::ErrorKind::Other,
+                              "Promise fulfiller was dropped.")
     }
 }
 
 /// Holds a collection of `Promise<T, E>`s and ensures that each executes to completion.
 /// Destroying a `TaskSet` automatically cancels all of its unfinished promises.
-pub struct TaskSet<T, E> where T: 'static, E: 'static {
+pub struct TaskSet<T, E>
+    where T: 'static,
+          E: 'static
+{
     task_set_impl: private::TaskSetImpl<T, E>,
 }
 
-impl <T, E> TaskSet <T, E> {
+impl<T, E> TaskSet<T, E> {
     pub fn new(reaper: Box<TaskReaper<T, E>>) -> TaskSet<T, E> {
         TaskSet { task_set_impl: private::TaskSetImpl::new(reaper) }
     }
@@ -475,7 +539,10 @@ impl <T, E> TaskSet <T, E> {
 
 /// Callbacks to be invoked when a task in a [`TaskSet`](struct.TaskSet.html) finishes. You are
 /// required to implement at least the failure case.
-pub trait TaskReaper<T, E> where T: 'static, E: 'static {
+pub trait TaskReaper<T, E>
+    where T: 'static,
+          E: 'static
+{
     fn task_succeeded(&mut self, _value: T) {}
     fn task_failed(&mut self, error: E);
 }

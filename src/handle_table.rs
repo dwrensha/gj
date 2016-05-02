@@ -23,19 +23,25 @@ use std::collections::binary_heap::BinaryHeap;
 use std::ops::{Index, IndexMut};
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash)]
-pub struct Handle { pub val : usize }
+pub struct Handle {
+    pub val: usize,
+}
 
 // Reverse ordering.
 impl ::std::cmp::Ord for Handle {
-    fn cmp(&self, other : &Handle) -> ::std::cmp::Ordering {
-        if self.val > other.val { ::std::cmp::Ordering::Less }
-        else if self.val < other.val { ::std::cmp::Ordering::Greater }
-        else { ::std::cmp::Ordering::Equal }
+    fn cmp(&self, other: &Handle) -> ::std::cmp::Ordering {
+        if self.val > other.val {
+            ::std::cmp::Ordering::Less
+        } else if self.val < other.val {
+            ::std::cmp::Ordering::Greater
+        } else {
+            ::std::cmp::Ordering::Equal
+        }
     }
 }
 
 impl ::std::cmp::PartialOrd for Handle {
-    fn partial_cmp(&self, other : &Handle) -> Option<::std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Handle) -> Option<::std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
@@ -44,14 +50,16 @@ pub struct HandleTable<T> {
     slots: Vec<Option<T>>,
     num_active: usize,
     // prioritize lower values
-    free_ids : BinaryHeap<Handle>,
+    free_ids: BinaryHeap<Handle>,
 }
 
-impl <T> HandleTable<T> {
+impl<T> HandleTable<T> {
     pub fn new() -> HandleTable<T> {
-        HandleTable { slots : Vec::new(),
-                      num_active: 0,
-                      free_ids : BinaryHeap::new() }
+        HandleTable {
+            slots: Vec::new(),
+            num_active: 0,
+            free_ids: BinaryHeap::new(),
+        }
     }
 
     pub fn remove(&mut self, handle: Handle) -> Option<T> {
