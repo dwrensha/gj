@@ -63,7 +63,7 @@ fn fulfiller() {
         let (promise, fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let p1 = promise.map(|x| {
             assert_eq!(x, 10);
-            return Ok(x + 1);
+            Ok(x + 1)
         });
 
         fulfiller.fulfill(10);
@@ -495,9 +495,7 @@ fn exclusive_join() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
         let mut event_port = ClosedEventPort(());
 
-        let left = Promise::ok(()).map(|()| {
-            return Ok(123);
-        });
+        let left = Promise::ok(()).map(|()| Ok(123));
         let (right, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
         let result = left.exclusive_join(right).wait(wait_scope, &mut event_port).unwrap();
 
@@ -508,9 +506,7 @@ fn exclusive_join() {
     EventLoop::top_level(|wait_scope| -> Result<(),()> {
         let mut event_port = ClosedEventPort(());
         let (left, _fulfiller) = Promise::<u32, ()>::and_fulfiller();
-        let right = Promise::ok(()).map(|()| {
-            return Ok(456);
-        });
+        let right = Promise::ok(()).map(|()| Ok(456));
 
         let result = left.exclusive_join(right).wait(wait_scope, &mut event_port).unwrap();
 
