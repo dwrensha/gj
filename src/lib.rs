@@ -248,8 +248,6 @@ impl<T, E> Promise<T, E> {
             handle.set(Box::new(done_event));
             self.node.on_ready(handle);
 
-            // event_loop.running = true;
-
             while !fired.get() {
                 if !event_loop.turn() {
                     // No events in the queue.
@@ -310,7 +308,6 @@ impl<E: Clone> EventPort<E> for ClosedEventPort<E> {
 /// A queue of events being executed in a loop on a single thread.
 pub struct EventLoop {
     // daemons: TaskSetImpl,
-    _running: bool,
     _last_runnable_state: bool,
     events: RefCell<handle_table::HandleTable<private::EventNode>>,
     head: private::EventHandle,
@@ -336,7 +333,6 @@ impl EventLoop {
 
         EVENT_LOOP.with(move |maybe_event_loop| {
             let event_loop = EventLoop {
-                _running: false,
                 _last_runnable_state: false,
                 events: RefCell::new(events),
                 head: head_handle,
@@ -400,19 +396,6 @@ impl EventLoop {
         events[self.tail.get().0].next = Some(event_handle);
         events[event_handle.0].prev = Some(self.tail.get());
         self.tail.set(event_handle);
-    }
-
-    /// Runs the event loop for `max_turn_count` turns or until there is nothing left to be done,
-    /// whichever comes first. This never calls the `EventPort`'s `sleep()` or `poll()`. It will
-    /// call the `EventPort`'s `set_runnable(false)` if the queue becomes empty.
-    fn _run(&mut self, max_turn_count: u32) {
-        self._running = true;
-
-        for _ in 0..max_turn_count {
-            if !self.turn() {
-                break;
-            }
-        }
     }
 
     /// Runs the event loop for a single step.
