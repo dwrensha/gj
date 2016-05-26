@@ -51,7 +51,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::result::Result;
-use private::{promise_node, Event, BoolEvent, PromiseAndFulfillerHub, PromiseAndFulfillerWrapper,
+use private::{promise_node, BoolEvent, PromiseAndFulfillerHub, PromiseAndFulfillerWrapper,
               EVENT_LOOP, with_current_event_loop, PromiseNode};
 
 
