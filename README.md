@@ -3,9 +3,11 @@
 [![Build Status](https://travis-ci.org/dwrensha/gj.svg?branch=master)](https://travis-ci.org/dwrensha/gj)
 [![crates.io](http://meritbadge.herokuapp.com/gj)](https://crates.io/crates/gj)
 
-[documentation](http://docs.capnproto-rust.org/gj/index.html)
+[documentation](https://docs.rs/gj/)
 
-EXPERIMENTAL! UNSTABLE! A WORK IN PROGRESS!
+WARNING:
+as of the [0.8 relase of capnp-rpc-rust](https://dwrensha.github.io/capnproto-rust/2017/01/04/rpc-futures.html),
+this library is DEPRECATED. Please use [futures-rs](https://github.com/alexcrichton/futures-rs) instead.
 
 GJ is a port of the
 [KJ event loop](https://capnproto.org/cxxrpc.html#kj-concurrency-framework)

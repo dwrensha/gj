@@ -6,7 +6,7 @@ authors = [ "David Renshaw <david@sandstorm.io>" ]
 license = "MIT"
 description = "Event loop and promises."
 repository = "https://github.com/dwrensha/gj"
-documentation = "https://docs.capnproto-rust.org/gj/"
+documentation = "https://docs.rs/gj/"
 
 readme = "README.md"
 
